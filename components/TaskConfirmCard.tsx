@@ -21,7 +21,8 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
     reminderDate: task.reminderDate ?? "",
     reminderTime: task.reminderTime ?? "",
   });
-  const [reminderOn, setReminderOn] = useState(false);
+  // Auto-enable reminder if AI already extracted a time from the message
+  const [reminderOn, setReminderOn] = useState(!!(task.reminderTime && task.reminderTime !== ""));
 
   const set = <K extends keyof TaskData>(k: K, v: TaskData[K]) =>
     setE((p) => ({ ...p, [k]: v }));
@@ -29,12 +30,15 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
   const toggleReminder = () => {
     const next = !reminderOn;
     setReminderOn(next);
-    if (!next) setE((p) => ({ ...p, reminderDate: "", reminderTime: "" }));
-    else setE((p) => ({
-      ...p,
-      reminderDate: p.reminderDate || p.deadline,
-      reminderTime: p.reminderTime || "09:00",
-    }));
+    if (!next) {
+      setE((p) => ({ ...p, reminderDate: "", reminderTime: "" }));
+    } else {
+      setE((p) => ({
+        ...p,
+        reminderDate: p.reminderDate || p.deadline,
+        reminderTime: p.reminderTime || "09:00", // default 9:00
+      }));
+    }
   };
 
   return (

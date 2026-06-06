@@ -78,7 +78,8 @@ create_task → {
     "tipoAttivita":"${TIPI_ATTIVITA.join("|")}",
     "canale":"${CANALE_OPTS.join("|")} oppure ''",
     "bloccatoDa":"➖ Non bloccato",
-    "approvazioneCliente":"➖ Non necessaria"
+    "approvazioneCliente":"➖ Non necessaria",
+    "reminderTime":"HH:MM se l'utente specifica un orario (es. 'alle 15'→'15:00', 'alle 9:30'→'09:30'), altrimenti ''"
   }
 }
 
@@ -175,6 +176,12 @@ CLIENTE: Mappa anche abbreviazioni:
 - toniolo/airbnb giuseppe → "Giuseppe Toniolo Airbnb"
 - luxyt → "Luxyt"
 
+ORARIO REMINDER:
+- "alle 15" / "alle 15:00" / "ore 15" → reminderTime: "15:00"
+- "alle 9:30" / "alle 9 e mezza" → reminderTime: "09:30"
+- "alle 8" → reminderTime: "08:00"
+- Se nessun orario specificato → reminderTime: ""
+
 DEFAULTS FISSI (sempre questi valori, non chiedere):
 - bloccatoDa: "➖ Non bloccato"
 - approvazioneCliente: "➖ Non necessaria"`;
@@ -227,6 +234,9 @@ DEFAULTS FISSI (sempre questi valori, non chiedere):
           ? (parsed.data.canale as Canale) : undefined,
         bloccatoDa: "➖ Non bloccato" as const,
         approvazioneCliente: "➖ Non necessaria" as const,
+        // Pre-fill reminder if time was mentioned in the message
+        reminderDate: parsed.data.reminderTime ? deadline : "",
+        reminderTime: typeof parsed.data.reminderTime === "string" ? parsed.data.reminderTime : "",
       },
     };
   }

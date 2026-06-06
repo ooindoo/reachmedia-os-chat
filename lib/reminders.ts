@@ -43,7 +43,12 @@ export function cleanOldReminders() {
 }
 
 // ── Try Notification Triggers API (Chrome Android only) ───────────────────────
-async function tryTriggerAPI(title: string, body: string, at: Date): Promise<boolean> {
+async function tryTriggerAPI(
+  title: string,
+  body: string,
+  at: Date,
+  notionUrl: string
+): Promise<boolean> {
   try {
     if (!("serviceWorker" in navigator)) return false;
     const reg = await navigator.serviceWorker.ready;
@@ -54,6 +59,7 @@ async function tryTriggerAPI(title: string, body: string, at: Date): Promise<boo
       body,
       icon: "/favicon.ico",
       badge: "/favicon.ico",
+      data: { notionUrl }, // passed to sw notificationclick handler
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       showTrigger: new (window as any).TimestampTrigger(at.getTime()),
     });
@@ -67,15 +73,25 @@ async function tryTriggerAPI(title: string, body: string, at: Date): Promise<boo
 export function fireReminder(reminder: Reminder) {
   if (Notification.permission !== "granted") return;
   markNotified(reminder.id);
-  const body = `${reminder.taskTitle}${reminder.cliente ? " · " + reminder.cliente : ""}`;
+  const body = `${reminder.taskTitle}${reminder.cliente ? " · " + reminder.cliente : ""}\nClicca per aprire su Notion`;
   try {
-    new Notification("📋 Reminder task", {
+    const notif = new Notification("📋 Reminder task", {
       body,
       icon: "/favicon.ico",
-      tag: reminder.id, // prevents duplicate notifications
+      tag: reminder.id,
+      // Note: `data` is not part of the standard Notification constructor,
+      // but we use onclick closure to handle the URL
     });
+    // Click handler: open the Notion task URL
+    notif.onclick = () => {
+      notif.close();
+      if (reminder.notionUrl) {
+        window.open(reminder.notionUrl, "_blank");
+      }
+      window.focus();
+    };
   } catch {
-    // Safari or blocked
+    // Safari or permission blocked
   }
 }
 
@@ -96,7 +112,7 @@ export async function scheduleReminder(reminder: Reminder) {
   }
 
   // Try Notification Triggers API (Chrome Android — works when app is closed)
-  const triggered = await tryTriggerAPI(title, body, at);
+  const triggered = await tryTriggerAPI(title, body, at, reminder.notionUrl);
   if (triggered) {
     markNotified(reminder.id);
     return;
