@@ -24,33 +24,55 @@ export interface Message {
   notionUrl?: string;
 }
 
-// ── Notification helper ────────────────────────────────────────────────────────
+const EXAMPLES = [
+  "chiama Squale venerdì",
+  "fattura CappellettoShop 1500€ giugno",
+  "3h su NOESI analytics oggi",
+  "segna fatto newsletter Markershop",
+];
+
 async function sendNotification(title: string, body: string) {
   if (typeof window === "undefined" || !("Notification" in window)) return;
   if (Notification.permission === "default") await Notification.requestPermission();
   if (Notification.permission === "granted") {
-    new Notification(title, { body, icon: "/apple-icon.png" });
+    new Notification(title, { body, icon: "/apple-icon" });
   }
 }
 
 const uid = () => crypto.randomUUID();
 
+// ── Shared input/button helpers ────────────────────────────────────────────────
+function SendButton({ loading, onClick, disabled }: { loading: boolean; onClick: () => void; disabled: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      aria-label="Invia"
+      className="shrink-0 bg-rm-accent text-black font-black hover:bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+    >
+      {/* Mobile: arrow 44×44 */}
+      <span className="flex sm:hidden items-center justify-center w-11 h-11 text-xl">
+        {loading ? "…" : "→"}
+      </span>
+      {/* Desktop: INVIA text */}
+      <span className="hidden sm:flex items-center text-[11px] uppercase px-4 py-2">
+        {loading ? "…" : "INVIA"}
+      </span>
+    </button>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content:
-        "Ciao. Dimmi cosa devo fare:\n• «chiama Squale venerdì»\n• «fattura CappellettoShop 1500€»\n• «3h su NOESI analytics oggi»\n• «segna fatto newsletter Markershop»",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [notificationsOn, setNotificationsOn] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const hasMessages = messages.length > 0;
 
   useEffect(() => {
     try {
@@ -77,7 +99,7 @@ export default function ChatPage() {
   const handleInputChange = (ev: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(ev.target.value);
     ev.target.style.height = "auto";
-    ev.target.style.height = Math.min(ev.target.scrollHeight, 120) + "px";
+    ev.target.style.height = Math.min(ev.target.scrollHeight, 160) + "px";
   };
 
   const patchMsg = (id: string, patch: Partial<Message>) =>
@@ -218,20 +240,69 @@ export default function ChatPage() {
 
   const hasActivePending = messages.some((m) => m.pending && savingId !== m.id);
 
+  // ── EMPTY STATE ───────────────────────────────────────────────────────────
+  if (!hasMessages) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-black overflow-x-hidden px-4 md:px-6 lg:px-10 py-8">
+        <div className="w-full max-w-full md:max-w-[600px] lg:max-w-[680px]">
+
+          {/* Logo */}
+          <div className="text-center mb-8 md:mb-10">
+            <h1 className="font-display text-5xl md:text-6xl lg:text-7xl tracking-display text-white leading-none">
+              REACHMEDIA.IT
+            </h1>
+            <p className="text-[#444] text-[11px] md:text-xs mt-3 uppercase tracking-[0.18em]">
+              OS · Task · Fatture · Time Log
+            </p>
+          </div>
+
+          {/* Input */}
+          <div className="relative bg-[#111111] border border-[#222]">
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              disabled={loading}
+              placeholder="Scrivi una task, fattura, ore o aggiornamento…"
+              className="w-full bg-transparent text-white resize-none leading-relaxed placeholder-[#555] disabled:cursor-not-allowed"
+              style={{ padding: "18px 68px 18px 20px", fontSize: "16px", maxHeight: "160px" }}
+            />
+            <div className="absolute right-3 bottom-3">
+              <SendButton loading={loading} onClick={() => handleSend()} disabled={!input.trim() || loading} />
+            </div>
+          </div>
+
+          {/* Suggestions */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            {EXAMPLES.map((text) => (
+              <button
+                key={text}
+                onClick={() => handleSend(text)}
+                className="text-[#555] text-[13px] border border-[#222] px-3 py-2 hover:text-[#999] hover:border-[#333] transition-colors"
+              >
+                {text}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── CHAT STATE ─────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen bg-black overflow-hidden">
+    <div className="flex flex-col h-screen bg-black overflow-x-hidden overflow-hidden">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="shrink-0 flex items-center justify-between px-4 md:px-6 py-4 border-b border-[#1a1a1a]">
-        <div>
-          <span className="font-display text-2xl md:text-3xl tracking-display transition-all duration-200 text-white hover:opacity-70 leading-none block">
-            REACHMEDIA.IT
-          </span>
-          <p className="text-[#444] text-[11px] mt-1">OS · Task · Fatture · Time Log</p>
-        </div>
+        <h1 className="font-display text-2xl md:text-3xl tracking-display text-white hover:opacity-70 transition-opacity duration-200 leading-none">
+          REACHMEDIA.IT
+        </h1>
         <button
           onClick={toggleNotifications}
-          className="flex items-center gap-2.5 shrink-0"
+          className="flex items-center gap-2.5 shrink-0 min-h-[44px] min-w-[44px] justify-end"
           title={notificationsOn ? "Disattiva notifiche" : "Attiva notifiche"}
         >
           <span className="hidden sm:block text-[10px] text-[#555] uppercase tracking-[0.12em] font-semibold">
@@ -244,8 +315,8 @@ export default function ChatPage() {
       </header>
 
       {/* ── Messages ─────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-[680px] mx-auto px-4 md:px-6 py-6 space-y-4">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="w-full max-w-full md:max-w-[600px] lg:max-w-[680px] mx-auto px-4 md:px-6 lg:px-10 py-6 space-y-4">
           {messages.map((msg) => (
             <ChatMessage
               key={msg.id}
@@ -264,9 +335,9 @@ export default function ChatPage() {
 
       {/* ── Input ─────────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-t border-[#1a1a1a]">
-        <div className="max-w-[680px] mx-auto px-4 md:px-6 py-5">
+        <div className="w-full max-w-full md:max-w-[600px] lg:max-w-[680px] mx-auto px-4 md:px-6 lg:px-10 py-4 md:py-5">
           <div
-            className={`flex items-end gap-3 border-b pb-2 transition-colors ${
+            className={`flex items-end gap-2 border-b pb-2 transition-colors ${
               hasActivePending
                 ? "border-[#222] opacity-50"
                 : "border-[#333] focus-within:border-rm-accent"
@@ -284,23 +355,20 @@ export default function ChatPage() {
                   ? "Conferma o annulla prima di continuare…"
                   : "Task, fattura, ore, aggiornamento…"
               }
-              className="flex-1 bg-transparent text-white text-sm resize-none leading-5 max-h-[120px] py-0.5 placeholder-[#555] disabled:cursor-not-allowed"
+              className="flex-1 bg-transparent text-white resize-none leading-5 max-h-[120px] py-0.5 placeholder-[#555] disabled:cursor-not-allowed"
+              style={{ fontSize: "16px" }}
             />
-            <button
+            <SendButton
+              loading={loading}
               onClick={() => handleSend()}
               disabled={!input.trim() || loading || hasActivePending}
-              aria-label="Invia"
-              className="shrink-0 mb-0.5 bg-rm-accent text-black font-black text-[11px] uppercase px-4 py-2 hover:bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              {loading ? "…" : "INVIA"}
-            </button>
+            />
           </div>
-          <p className="text-[#444] text-[10px] uppercase tracking-[0.1em] mt-2">
+          <p className="hidden md:block text-[#444] text-[10px] uppercase tracking-[0.1em] mt-2">
             ENTER invia · SHIFT+ENTER a capo
           </p>
         </div>
       </div>
-
     </div>
   );
 }
