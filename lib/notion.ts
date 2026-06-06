@@ -2,7 +2,8 @@ import { Client } from "@notionhq/client";
 import { CLIENTS } from "./clients";
 import type { TipoAttivita, Priorita } from "./clients";
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type NotionPage = Record<string, any>;
 
 export interface TaskData {
   titolo: string;
@@ -12,33 +13,40 @@ export interface TaskData {
   tipoAttivita: TipoAttivita;
 }
 
-export async function createNotionTask(task: TaskData) {
+export async function createNotionTask(task: TaskData): Promise<NotionPage> {
+  const notion = new Client({ auth: process.env.NOTION_TOKEN });
   const dbId = process.env.NOTION_TASK_DB!;
   const clientInfo = CLIENTS[task.cliente];
 
-  const response = await notion.pages.create({
+  const page = await notion.pages.create({
     parent: { database_id: dbId },
     properties: {
+      // "Task" is the title field
       Task: {
         title: [{ text: { content: task.titolo } }],
       },
+      // Relation to the client page
       Cliente: {
         relation: clientInfo ? [{ id: clientInfo.id }] : [],
       },
+      // Date
       Deadline: {
         date: { start: task.deadline },
       },
-      Priorità: {
+      // Select field for priority
+      "Priorità": {
         select: { name: task.priorita },
       },
+      // Select field for task type
       "Tipo attività": {
         select: { name: task.tipoAttivita },
       },
+      // Status field
       Stato: {
         status: { name: "Not started" },
       },
     },
-  });
+  }) as NotionPage;
 
-  return response;
+  return page;
 }
