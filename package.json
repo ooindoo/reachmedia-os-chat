@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.101.0",
     "@notionhq/client": "^5.22.0",
     "next": "14.2.35",
+    "next-auth": "^4.24.14",
     "react": "^18",
     "react-dom": "^18"
   },

@@ -26,6 +26,8 @@ export interface TaskData {
   // Client-side only — NOT saved to Notion
   reminderDate?: string;
   reminderTime?: string;
+  // Google Calendar reminder option — NOT saved to Notion
+  gcalReminder?: "none" | "same_day" | "1_day" | "2_days" | "1_week";
 }
 
 export async function createNotionTask(task: TaskData): Promise<NotionPage> {

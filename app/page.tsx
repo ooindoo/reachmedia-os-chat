@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useSession, signIn, signOut } from "next-auth/react";
 import ChatMessage from "@/components/ChatMessage";
 import type { TaskData } from "@/lib/notion";
 import type { InvoiceData } from "@/lib/invoice";
@@ -67,6 +68,14 @@ function SendButton({ loading, onClick, disabled }: { loading: boolean; onClick:
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ChatPage() {
+  const { data: session, status: sessionStatus } = useSession();
+  // gcalConnected = has a valid token AND the granted scope includes calendar.events
+  const gcalConnected =
+    sessionStatus === "authenticated" &&
+    !!session?.accessToken &&
+    !session?.error &&
+    !!(session?.scope ?? "").includes("calendar");
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -177,22 +186,87 @@ export default function ChatPage() {
 
   // ── Confirm handlers ──────────────────────────────────────────────────────
   const handleConfirmTask = async (msgId: string, task: TaskData) => {
+    const wantsGcal = task.gcalReminder && task.gcalReminder !== "none";
+
+    // If Google Calendar requested but not connected, prompt sign-in first
+    if (wantsGcal && !gcalConnected) {
+      patchMsg(msgId, { content: "Connetti Google Calendar per aggiungere l'evento — clicca il pulsante GCAL nell'header, poi riprova." });
+      return;
+    }
+
     patchMsg(msgId, { pending: undefined, content: "Salvataggio…" });
     setSavingId(msgId);
     try {
-      const res = await fetch("/api/create-task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task }) });
+      // ── 1. Save to Notion ────────────────────────────────────────────────
+      const res = await fetch("/api/create-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task }),
+      });
       const data = await res.json();
-      if (!res.ok || !data.success) { patchMsg(msgId, { content: `❌ ${data.error ?? "Errore"}` }); return; }
-      if (notificationsOn && task.reminderDate && task.reminderTime) {
-        const rid = saveReminder({ taskTitle: task.titolo, cliente: task.cliente, reminderAt: `${task.reminderDate}T${task.reminderTime}:00`, notionUrl: data.url ?? "" });
-        await scheduleReminder({ taskTitle: task.titolo, cliente: task.cliente, reminderAt: `${task.reminderDate}T${task.reminderTime}:00`, notionUrl: data.url ?? "", id: rid, notified: false, createdAt: Date.now() });
+      if (!res.ok || !data.success) {
+        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore"}` });
+        return;
       }
+
+      // ── 2. Local reminder (browser notification) ─────────────────────────
+      if (notificationsOn && task.reminderDate && task.reminderTime) {
+        const rid = saveReminder({
+          taskTitle: task.titolo,
+          cliente: task.cliente,
+          reminderAt: `${task.reminderDate}T${task.reminderTime}:00`,
+          notionUrl: data.url ?? "",
+        });
+        await scheduleReminder({
+          taskTitle: task.titolo,
+          cliente: task.cliente,
+          reminderAt: `${task.reminderDate}T${task.reminderTime}:00`,
+          notionUrl: data.url ?? "",
+          id: rid,
+          notified: false,
+          createdAt: Date.now(),
+        });
+      }
+
+      // ── 3. Google Calendar event ──────────────────────────────────────────
+      let gcalNote = "";
+      if (wantsGcal && gcalConnected) {
+        try {
+          const gcRes = await fetch("/api/calendar", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ task, gcalReminder: task.gcalReminder }),
+          });
+          const gcData = await gcRes.json() as { success?: boolean; error?: string; detail?: string };
+          if (gcRes.ok && gcData.success) {
+            gcalNote = "\n📅 Evento aggiunto su Google Calendar ✓";
+          } else if (gcRes.status === 403 && gcData.error === "SCOPE_ERROR") {
+            // Token exists but missing calendar scope — force re-consent with full scopes
+            signIn("google");
+            gcalNote = "\n⚠️ Accesso al calendario non autorizzato — riconnessione Google in corso…";
+          } else {
+            gcalNote = `\n⚠️ Calendar: ${gcData.detail ?? gcData.error ?? "Errore"}`;
+          }
+        } catch {
+          gcalNote = "\n⚠️ Calendar: errore di rete";
+        }
+      }
+
+      // ── 4. Success message ────────────────────────────────────────────────
+      const reminderNote =
+        task.reminderDate && task.reminderTime
+          ? `\n🔔 Reminder ${task.reminderDate} alle ${task.reminderTime}`
+          : "";
+
       patchMsg(msgId, {
-        content: `✓ Task "${task.titolo}" salvata${task.reminderDate && task.reminderTime ? `\n🔔 Reminder ${task.reminderDate} alle ${task.reminderTime}` : ""}`,
+        content: `✓ Task "${task.titolo}" salvata su Notion${gcalNote}${reminderNote}`,
         notionUrl: data.url,
       });
-    } catch { patchMsg(msgId, { content: "❌ Errore di rete." }); }
-    finally { setSavingId(null); }
+    } catch {
+      patchMsg(msgId, { content: "❌ Errore di rete." });
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const handleConfirmInvoice = async (msgId: string, invoice: InvoiceData) => {
@@ -292,6 +366,26 @@ export default function ChatPage() {
               </button>
             ))}
           </div>
+
+          {/* Google Calendar auth hint */}
+          <div className="mt-6 flex items-center gap-3">
+            {gcalConnected ? (
+              <div className="flex items-center gap-2">
+                <span className="text-[#CCFF00] text-[10px] font-black uppercase tracking-[0.12em]">GCAL ✓</span>
+                <span className="text-[#333] text-[10px] uppercase tracking-[0.1em]">Google Calendar connesso</span>
+                <button onClick={() => signOut({ redirect: false })} className="text-[#333] text-[10px] uppercase tracking-[0.1em] hover:text-[#555] transition-colors ml-2">
+                  Scollega
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => signIn("google")}
+                className="flex items-center gap-2 text-[#333] text-[10px] uppercase tracking-[0.12em] font-semibold hover:text-[#555] transition-colors border border-[#1a1a1a] px-3 py-2 hover:border-[#333]"
+              >
+                <span>+ Connetti Google Calendar</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -316,18 +410,40 @@ export default function ChatPage() {
             REACHMEDIA.IT
           </h1>
         </div>
-        <button
-          onClick={toggleNotifications}
-          className="flex items-center gap-2.5 shrink-0 min-h-[44px] min-w-[44px] justify-end"
-          title={notificationsOn ? "Disattiva notifiche" : "Attiva notifiche"}
-        >
-          <span className="hidden sm:block text-[10px] text-[#555] uppercase tracking-[0.12em] font-semibold">
-            NOTIFICHE
-          </span>
-          <div className={`relative w-8 h-4 transition-colors ${notificationsOn ? "bg-rm-accent" : "bg-[#222]"}`}>
-            <span className={`absolute top-0.5 w-3 h-3 bg-black transition-all ${notificationsOn ? "translate-x-4" : "translate-x-0.5"}`} />
-          </div>
-        </button>
+        <div className="flex items-center gap-4">
+          {/* Google Calendar auth button */}
+          {gcalConnected ? (
+            <button
+              onClick={() => signOut({ redirect: false })}
+              className="flex items-center gap-1.5 min-h-[44px] px-1"
+              title="Google Calendar connesso — clicca per scollegare"
+            >
+              <span className="text-[10px] font-black uppercase tracking-[0.1em] text-[#CCFF00]">GCAL ✓</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => signIn("google")}
+              className="flex items-center gap-1.5 min-h-[44px] px-1 hover:opacity-70 transition-opacity"
+              title="Connetti Google Calendar"
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[#555] hover:text-[#999] transition-colors">CONNETTI GCAL</span>
+            </button>
+          )}
+
+          {/* Notifications toggle */}
+          <button
+            onClick={toggleNotifications}
+            className="flex items-center gap-2.5 shrink-0 min-h-[44px] min-w-[44px] justify-end"
+            title={notificationsOn ? "Disattiva notifiche" : "Attiva notifiche"}
+          >
+            <span className="hidden sm:block text-[10px] text-[#555] uppercase tracking-[0.12em] font-semibold">
+              NOTIFICHE
+            </span>
+            <div className={`relative w-8 h-4 transition-colors ${notificationsOn ? "bg-rm-accent" : "bg-[#222]"}`}>
+              <span className={`absolute top-0.5 w-3 h-3 bg-black transition-all ${notificationsOn ? "translate-x-4" : "translate-x-0.5"}`} />
+            </div>
+          </button>
+        </div>
       </header>
 
       {/* ── Messages ─────────────────────────────────────────────────────── */}

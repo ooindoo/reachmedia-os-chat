@@ -15,6 +15,14 @@ const fs = "w-full bg-transparent text-white text-sm border-b border-[#333] focu
 const fl = "shrink-0 w-[110px] text-[11px] text-[#555] uppercase tracking-[0.08em] font-semibold leading-[1.4]";
 const fr = "flex items-start gap-3 px-4 py-3 border-b border-[#1a1a1a]";
 
+const GCAL_OPTIONS: { value: NonNullable<TaskData["gcalReminder"]>; label: string }[] = [
+  { value: "none",     label: "Nessuno" },
+  { value: "same_day", label: "Giorno dell'evento · 09:00" },
+  { value: "1_day",    label: "1 giorno prima · 09:00" },
+  { value: "2_days",   label: "2 giorni prima · 09:00" },
+  { value: "1_week",   label: "1 settimana prima · 09:00" },
+];
+
 export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
   const [e, setE] = useState<TaskData>({
     ...task,
@@ -22,6 +30,7 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
     approvazioneCliente: task.approvazioneCliente ?? "➖ Non necessaria",
     reminderDate: task.reminderDate ?? "",
     reminderTime: task.reminderTime ?? "",
+    gcalReminder: task.gcalReminder ?? "none",
   });
   const [reminderOn, setReminderOn] = useState(!!(task.reminderTime && task.reminderTime !== ""));
   const set = <K extends keyof TaskData>(k: K, v: TaskData[K]) => setE((p) => ({ ...p, [k]: v }));
@@ -140,13 +149,33 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
         </div>
       </div>
 
+      {/* GOOGLE CALENDAR REMINDER */}
+      <div className={fr}>
+        <span className={fl}>GOOGLE CAL</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap gap-1.5">
+            {GCAL_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => set("gcalReminder", opt.value)}
+                className={`px-2.5 py-[3px] text-[11px] font-semibold uppercase bg-[#1a1a1a] border border-[#333] transition-colors whitespace-nowrap ${
+                  e.gcalReminder === opt.value ? "text-[#CCFF00] border-[#CCFF00]" : "text-[#555]"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Actions */}
       <div className="p-4 flex flex-col gap-2">
         <button
           onClick={() => onConfirm(e)}
           className="w-full py-3 bg-[#CCFF00] text-black text-[11px] font-black uppercase tracking-[0.08em] hover:bg-white transition-colors"
         >
-          SALVA SU NOTION
+          {e.gcalReminder && e.gcalReminder !== "none" ? "SALVA SU NOTION + GOOGLE CALENDAR" : "SALVA SU NOTION"}
         </button>
         <button
           onClick={onCancel}
