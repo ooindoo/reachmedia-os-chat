@@ -6,8 +6,7 @@ import type { TaskData } from "@/lib/notion";
 import type { InvoiceData } from "@/lib/invoice";
 import type { TimeLogData } from "@/lib/timelog";
 import type { TaskSearchResult, TaskUpdate } from "@/lib/update-task";
-import { saveReminder, scheduleReminder, bootstrapReminders, markNotified } from "@/lib/reminders";
-import type { Reminder } from "@/lib/reminders";
+import { saveReminder, scheduleReminder, bootstrapReminders, checkDueReminders } from "@/lib/reminders";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export type PendingAction =
@@ -76,13 +75,29 @@ export default function ChatPage() {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
 
-    // Reschedule any pending reminders from previous sessions
+    // Reschedule + check overdue reminders from previous sessions
     if (Notification.permission === "granted") {
-      bootstrapReminders((r: Reminder) => {
-        markNotified(r.id);
-        sendNotification("📋 Reminder task", `${r.taskTitle}${r.cliente ? " · " + r.cliente : ""}`);
-      });
+      bootstrapReminders();
     }
+
+    // ── Polling fallback for Mac/Desktop (tab must be open) ──────────────────
+    // Checks every 60s for due reminders — catches any that setTimeout missed
+    const poll = setInterval(() => {
+      if (Notification.permission === "granted") checkDueReminders();
+    }, 60_000);
+
+    // Also check whenever the user focuses the tab (e.g. returns from another app)
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Notification.permission === "granted") {
+        checkDueReminders();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   const toggleNotifications = async () => {
@@ -218,20 +233,20 @@ export default function ChatPage() {
         // Schedule reminder if set
         if (notificationsOn && task.reminderDate && task.reminderTime) {
           const reminderAt = `${task.reminderDate}T${task.reminderTime}:00`;
-          const reminder = {
+          const reminderData = {
             taskTitle: task.titolo,
             cliente: task.cliente,
             reminderAt,
             notionUrl: data.url ?? "",
           };
-          const rid = saveReminder(reminder);
-          await scheduleReminder(
-            { ...reminder, id: rid, notified: false, createdAt: Date.now() },
-            (r: Reminder) => {
-              markNotified(r.id);
-              sendNotification("📋 Reminder task", `${r.taskTitle}${r.cliente ? " · " + r.cliente : ""}`);
-            }
-          );
+          const rid = saveReminder(reminderData);
+          // Schedule with new API (no callback needed — fireReminder handles it)
+          await scheduleReminder({
+            ...reminderData,
+            id: rid,
+            notified: false,
+            createdAt: Date.now(),
+          });
           const orario = `${task.reminderDate} alle ${task.reminderTime}`;
           patchMsg(msgId, {
             content: `✅ Task «${task.titolo}» salvata!\n🔔 Reminder impostato per ${orario}`,

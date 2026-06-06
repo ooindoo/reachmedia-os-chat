@@ -37,25 +37,18 @@ export function markNotified(id: string) {
 }
 
 export function cleanOldReminders() {
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; // keep 7 days
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const fresh = getReminders().filter((r) => r.createdAt > cutoff);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
 }
 
-// ── Schedule via Notification Triggers API (Chrome/Android) ───────────────────
-async function tryTriggerAPI(
-  title: string,
-  body: string,
-  at: Date
-): Promise<boolean> {
+// ── Try Notification Triggers API (Chrome Android only) ───────────────────────
+async function tryTriggerAPI(title: string, body: string, at: Date): Promise<boolean> {
   try {
     if (!("serviceWorker" in navigator)) return false;
     const reg = await navigator.serviceWorker.ready;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const NotificationAny = Notification as any;
-    if (!NotificationAny.prototype || !("showTrigger" in NotificationAny.prototype)) {
-      return false;
-    }
+    if (typeof (window as any).TimestampTrigger === "undefined") return false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (reg as any).showNotification(title, {
       body,
@@ -70,11 +63,24 @@ async function tryTriggerAPI(
   }
 }
 
-// ── Schedule a reminder (tries Trigger API, falls back to setTimeout) ─────────
-export async function scheduleReminder(
-  reminder: Reminder,
-  onFire: (r: Reminder) => void
-) {
+// ── Fire notification now ─────────────────────────────────────────────────────
+export function fireReminder(reminder: Reminder) {
+  if (Notification.permission !== "granted") return;
+  markNotified(reminder.id);
+  const body = `${reminder.taskTitle}${reminder.cliente ? " · " + reminder.cliente : ""}`;
+  try {
+    new Notification("📋 Reminder task", {
+      body,
+      icon: "/favicon.ico",
+      tag: reminder.id, // prevents duplicate notifications
+    });
+  } catch {
+    // Safari or blocked
+  }
+}
+
+// ── Schedule a single reminder ─────────────────────────────────────────────────
+export async function scheduleReminder(reminder: Reminder) {
   if (Notification.permission !== "granted") return;
 
   const at = new Date(reminder.reminderAt);
@@ -84,29 +90,48 @@ export async function scheduleReminder(
   const body = `${reminder.taskTitle}${reminder.cliente ? " · " + reminder.cliente : ""}`;
 
   if (delay <= 0) {
-    // Already past — notify immediately if within 1h
-    if (delay > -60 * 60 * 1000) onFire(reminder);
+    // Past but within 1h → fire immediately
+    if (delay > -60 * 60 * 1000) fireReminder(reminder);
     return;
   }
 
-  // Try Notification Triggers API first (works when browser/app is closed on Android)
+  // Try Notification Triggers API (Chrome Android — works when app is closed)
   const triggered = await tryTriggerAPI(title, body, at);
   if (triggered) {
-    markNotified(reminder.id); // trigger API handles delivery
+    markNotified(reminder.id);
     return;
   }
 
-  // Fallback: setTimeout (works only while app is open)
+  // Fallback: precise setTimeout (works while tab is open)
   if (delay <= 48 * 60 * 60 * 1000) {
-    setTimeout(() => onFire(reminder), delay);
+    setTimeout(() => fireReminder(reminder), delay);
   }
 }
 
-// ── On app load: reschedule all pending reminders ─────────────────────────────
-export async function bootstrapReminders(onFire: (r: Reminder) => void) {
+// ── Poll check — call this on interval & visibilitychange ─────────────────────
+// This is the Mac/Desktop fallback: checks every ~60s and fires overdue reminders
+export function checkDueReminders() {
+  if (Notification.permission !== "granted") return;
+  const now = Date.now();
+  const pending = getReminders().filter((r) => !r.notified);
+
+  for (const r of pending) {
+    const reminderTime = new Date(r.reminderAt).getTime();
+    const overdue = now - reminderTime;
+    // Fire if within a ±5 minute window (overdue but not too old)
+    if (overdue >= 0 && overdue < 5 * 60 * 1000) {
+      fireReminder(r);
+    }
+  }
+}
+
+// ── Bootstrap on app load ─────────────────────────────────────────────────────
+export async function bootstrapReminders() {
   cleanOldReminders();
   const pending = getReminders().filter((r) => !r.notified);
   for (const r of pending) {
-    await scheduleReminder(r, onFire);
+    await scheduleReminder(r);
   }
+  // Check immediately for any overdue reminders
+  checkDueReminders();
 }
