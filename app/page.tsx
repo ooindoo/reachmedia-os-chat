@@ -3,22 +3,37 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ChatMessage from "@/components/ChatMessage";
 import type { TaskData } from "@/lib/notion";
+import type { InvoiceData } from "@/lib/invoice";
+import type { TimeLogData } from "@/lib/timelog";
+import type { TaskSearchResult, TaskUpdate } from "@/lib/update-task";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+export type PendingAction =
+  | { type: "create_task"; data: TaskData }
+  | { type: "create_invoice"; data: InvoiceData }
+  | { type: "create_timelog"; data: TimeLogData }
+  | { type: "select_task"; tasks: TaskSearchResult[]; updates: TaskUpdate }
+  | { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate };
 
 export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
-  taskData?: TaskData;
-  awaitingConfirm?: boolean;
+  pending?: PendingAction;
   notionUrl?: string;
 }
 
+// ── Examples ───────────────────────────────────────────────────────────────────
 const EXAMPLES = [
   "chiama Squale entro venerdì",
-  "prepara newsletter CappellettoShop per lunedì",
-  "fix bug Opplant urgente",
-  "report analytics NOESI per giovedì",
+  "newsletter CappellettoShop per lunedì",
+  "fattura Squale 2000€ giugno pagata con bonifico",
+  "ho lavorato 3 ore su NOESI su analytics oggi",
+  "segna come fatto la call con Squale",
 ];
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+const uid = () => crypto.randomUUID();
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
@@ -26,7 +41,7 @@ export default function ChatPage() {
       id: "welcome",
       role: "assistant",
       content:
-        "Ciao! 👋 Dimmi cosa devo aggiungere in Notion — es. \"chiama Squale entro venerdì\" o \"newsletter CappellettoShop per lunedì\".",
+        "Ciao! 👋 Dimmi cosa devo fare:\n• Task: «chiama Squale venerdì»\n• Fattura: «fattura CappellettoShop 1500€ giugno»\n• Ore: «ho lavorato 2h su NOESI oggi»\n• Aggiorna: «segna come fatto la newsletter Markershop»",
     },
   ]);
   const [input, setInput] = useState("");
@@ -35,93 +50,99 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Auto-resize textarea
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+  const handleInputChange = (ev: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(ev.target.value);
+    ev.target.style.height = "auto";
+    ev.target.style.height = Math.min(ev.target.scrollHeight, 120) + "px";
   };
 
-  const addMessage = (msg: Omit<Message, "id">) => {
-    const id = crypto.randomUUID();
-    setMessages((prev) => [...prev, { ...msg, id }]);
-    return id;
-  };
+  // ── Update a message in place ──────────────────────────────────────────────
+  const patchMsg = (id: string, patch: Partial<Message>) =>
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
 
+  // ── Send & Parse ───────────────────────────────────────────────────────────
   const handleSend = useCallback(
     async (text?: string) => {
       const userText = (text ?? input).trim();
       if (!userText || loading) return;
 
       setInput("");
-      if (inputRef.current) {
-        inputRef.current.style.height = "auto";
-      }
+      if (inputRef.current) inputRef.current.style.height = "auto";
 
-      // Add user message
-      addMessage({ role: "user", content: userText });
+      setMessages((prev) => [...prev, { id: uid(), role: "user", content: userText }]);
       setLoading(true);
 
-      // Add typing indicator
-      const thinkingId = crypto.randomUUID();
-      setMessages((prev) => [
-        ...prev,
-        { id: thinkingId, role: "assistant", content: "⏳ Sto analizzando…" },
-      ]);
+      const thinkingId = uid();
+      setMessages((prev) => [...prev, { id: thinkingId, role: "assistant", content: "⏳ Analizzo…" }]);
 
       try {
-        const res = await fetch("/api/parse", {
+        // 1. Parse intent
+        const parseRes = await fetch("/api/parse", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: userText }),
         });
+        const parsed = await parseRes.json();
 
-        const data = await res.json();
-
-        if (!res.ok || !data.task) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === thinkingId
-                ? {
-                    ...m,
-                    content:
-                      data.error ??
-                      "Non sono riuscito a interpretare il messaggio. Riprova.",
-                  }
-                : m
-            )
-          );
+        if (!parseRes.ok) {
+          patchMsg(thinkingId, { content: `❌ ${parsed.error ?? "Errore di analisi"}` });
           return;
         }
 
-        const task: TaskData = data.task;
+        // 2. Route by intent
+        if (parsed.intent === "create_task") {
+          patchMsg(thinkingId, {
+            content: "📋 Task estratta — modificala se serve:",
+            pending: { type: "create_task", data: parsed.data },
+          });
+        } else if (parsed.intent === "create_invoice") {
+          patchMsg(thinkingId, {
+            content: "📄 Fattura estratta — modificala se serve:",
+            pending: { type: "create_invoice", data: parsed.data },
+          });
+        } else if (parsed.intent === "create_timelog") {
+          patchMsg(thinkingId, {
+            content: "⏱ Sessione estratta — modificala se serve:",
+            pending: { type: "create_timelog", data: parsed.data },
+          });
+        } else if (parsed.intent === "update_task") {
+          // Search tasks
+          patchMsg(thinkingId, { content: "🔍 Cerco la task…" });
+          const sq = encodeURIComponent(parsed.searchQuery || "");
+          const cl = encodeURIComponent(parsed.cliente || "");
+          const searchRes = await fetch(`/api/search-tasks?q=${sq}&cliente=${cl}`);
+          const searchData = await searchRes.json();
 
-        // Replace thinking indicator with confirmation card
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === thinkingId
-              ? {
-                  ...m,
-                  content: "Ho estratto questi dettagli — modificali se serve:",
-                  taskData: task,
-                  awaitingConfirm: true,
-                }
-              : m
-          )
-        );
+          if (!searchRes.ok || !searchData.tasks) {
+            patchMsg(thinkingId, { content: `❌ ${searchData.error ?? "Errore ricerca"}` });
+            return;
+          }
+
+          const tasks: TaskSearchResult[] = searchData.tasks;
+          if (tasks.length === 0) {
+            patchMsg(thinkingId, {
+              content: `🔍 Nessuna task trovata con "${parsed.searchQuery}". Prova con parole più specifiche.`,
+            });
+          } else if (tasks.length === 1) {
+            patchMsg(thinkingId, {
+              content: "✏️ Ecco cosa cambierò — conferma:",
+              pending: { type: "confirm_update", task: tasks[0], updates: parsed.updates },
+            });
+          } else {
+            patchMsg(thinkingId, {
+              content: `Ho trovato ${tasks.length} task simili — quale vuoi aggiornare?`,
+              pending: { type: "select_task", tasks, updates: parsed.updates },
+            });
+          }
+        } else {
+          patchMsg(thinkingId, { content: "Non ho capito. Prova con un messaggio più specifico." });
+        }
       } catch {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === thinkingId
-              ? { ...m, content: "Errore di rete. Controlla la connessione e riprova." }
-              : m
-          )
-        );
+        patchMsg(thinkingId, { content: "❌ Errore di rete. Controlla la connessione." });
       } finally {
         setLoading(false);
       }
@@ -129,15 +150,10 @@ export default function ChatPage() {
     [input, loading]
   );
 
-  const handleConfirm = async (msgId: string, task: TaskData) => {
-    // Dismiss the confirm card immediately
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === msgId ? { ...m, awaitingConfirm: false, content: "✅ Salvataggio…" } : m
-      )
-    );
+  // ── Confirm Task ───────────────────────────────────────────────────────────
+  const handleConfirmTask = async (msgId: string, task: TaskData) => {
+    patchMsg(msgId, { pending: undefined, content: "✅ Salvataggio task…" });
     setSavingId(msgId);
-
     try {
       const res = await fetch("/api/create-task", {
         method: "POST",
@@ -145,90 +161,118 @@ export default function ChatPage() {
         body: JSON.stringify({ task }),
       });
       const data = await res.json();
-
       if (!res.ok || !data.success) {
-        // Show a clean user-friendly message
-        let userMsg = "Errore nel salvataggio su Notion. Riprova.";
-        if (data.error?.includes("object_not_found") || data.error?.includes("not find database")) {
-          userMsg = "⚠️ Il database Notion non è ancora condiviso con l'integrazione \"reachmedia-os\". Vai su Notion → apri il database Task → ··· → Connessioni → aggiungi reachmedia-os.";
-        } else if (data.error?.includes("unauthorized") || data.error?.includes("API token")) {
-          userMsg = "⚠️ Token Notion non valido. Controlla le variabili d'ambiente su Vercel.";
-        } else if (data.error) {
-          userMsg = `Errore Notion: ${data.error}`;
-        }
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === msgId ? { ...m, content: userMsg } : m
-          )
-        );
-        return;
+        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore salvataggio task"}` });
+      } else {
+        patchMsg(msgId, { content: `✅ Task «${task.titolo}» salvata!`, notionUrl: data.url });
       }
-
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msgId
-            ? {
-                ...m,
-                content: `✅ Task "${task.titolo}" salvata su Notion!`,
-                notionUrl: data.url,
-              }
-            : m
-        )
-      );
     } catch {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msgId
-            ? { ...m, content: "Errore di rete durante il salvataggio. Riprova." }
-            : m
-        )
-      );
+      patchMsg(msgId, { content: "❌ Errore di rete durante il salvataggio." });
     } finally {
       setSavingId(null);
     }
   };
 
-  const handleCancel = (msgId: string) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === msgId
-          ? { ...m, awaitingConfirm: false, taskData: undefined, content: "Operazione annullata." }
-          : m
-      )
-    );
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+  // ── Confirm Invoice ────────────────────────────────────────────────────────
+  const handleConfirmInvoice = async (msgId: string, invoice: InvoiceData) => {
+    patchMsg(msgId, { pending: undefined, content: "✅ Salvataggio fattura…" });
+    setSavingId(msgId);
+    try {
+      const res = await fetch("/api/create-invoice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore salvataggio fattura"}` });
+      } else {
+        patchMsg(msgId, { content: `✅ Fattura «${invoice.descrizione}» (€${invoice.importoLordo}) salvata!`, notionUrl: data.url });
+      }
+    } catch {
+      patchMsg(msgId, { content: "❌ Errore di rete durante il salvataggio." });
+    } finally {
+      setSavingId(null);
     }
   };
 
-  const hasActiveConfirm = messages.some((m) => m.awaitingConfirm);
+  // ── Confirm Time Log ───────────────────────────────────────────────────────
+  const handleConfirmTimeLog = async (msgId: string, timelog: TimeLogData) => {
+    patchMsg(msgId, { pending: undefined, content: "✅ Salvataggio time log…" });
+    setSavingId(msgId);
+    try {
+      const res = await fetch("/api/create-timelog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timelog }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore salvataggio time log"}` });
+      } else {
+        patchMsg(msgId, { content: `✅ ${timelog.oreLavorate}h su ${timelog.cliente || "—"} registrate!`, notionUrl: data.url });
+      }
+    } catch {
+      patchMsg(msgId, { content: "❌ Errore di rete durante il salvataggio." });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // ── Select Task (from multiple results) ────────────────────────────────────
+  const handleSelectTask = (msgId: string, task: TaskSearchResult, updates: TaskUpdate) => {
+    patchMsg(msgId, {
+      content: "✏️ Ecco cosa cambierò — conferma:",
+      pending: { type: "confirm_update", task, updates },
+    });
+  };
+
+  // ── Confirm Update ─────────────────────────────────────────────────────────
+  const handleConfirmUpdate = async (msgId: string, task: TaskSearchResult, updates: TaskUpdate) => {
+    patchMsg(msgId, { pending: undefined, content: "✅ Aggiornamento in corso…" });
+    setSavingId(msgId);
+    try {
+      const res = await fetch("/api/update-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: task.id, updates }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore aggiornamento"}` });
+      } else {
+        patchMsg(msgId, { content: `✅ Task «${task.titolo}» aggiornata!`, notionUrl: data.url });
+      }
+    } catch {
+      patchMsg(msgId, { content: "❌ Errore di rete durante l'aggiornamento." });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // ── Cancel ─────────────────────────────────────────────────────────────────
+  const handleCancel = (msgId: string) => {
+    patchMsg(msgId, { pending: undefined, content: "Operazione annullata." });
+  };
+
+  const handleKeyDown = (ev: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); handleSend(); }
+  };
+
+  const hasActivePending = messages.some((m) => m.pending && savingId !== m.id);
 
   return (
     <div className="flex flex-col h-screen bg-zinc-950 max-w-lg mx-auto">
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800 shrink-0">
         <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
-          <svg
-            className="w-4 h-4 text-white"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2.5}
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-            />
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
           </svg>
         </div>
         <div>
           <p className="text-sm font-semibold text-white leading-none">reachmedia OS</p>
-          <p className="text-xs text-zinc-500 mt-0.5">Crea task Notion</p>
+          <p className="text-xs text-zinc-500 mt-0.5">Task · Fatture · Time Log</p>
         </div>
         <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-400">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -242,105 +286,78 @@ export default function ChatPage() {
           <ChatMessage
             key={msg.id}
             message={msg}
-            onConfirm={
-              msg.awaitingConfirm && savingId !== msg.id
-                ? (task) => handleConfirm(msg.id, task)
+            onConfirmTask={
+              msg.pending?.type === "create_task" && savingId !== msg.id
+                ? (d) => handleConfirmTask(msg.id, d) : undefined
+            }
+            onConfirmInvoice={
+              msg.pending?.type === "create_invoice" && savingId !== msg.id
+                ? (d) => handleConfirmInvoice(msg.id, d) : undefined
+            }
+            onConfirmTimeLog={
+              msg.pending?.type === "create_timelog" && savingId !== msg.id
+                ? (d) => handleConfirmTimeLog(msg.id, d) : undefined
+            }
+            onSelectTask={
+              msg.pending?.type === "select_task" && savingId !== msg.id
+                ? (task) => handleSelectTask(msg.id, task, (msg.pending as { type: "select_task"; tasks: TaskSearchResult[]; updates: TaskUpdate }).updates)
                 : undefined
             }
-            onCancel={
-              msg.awaitingConfirm && savingId !== msg.id
-                ? () => handleCancel(msg.id)
+            onConfirmUpdate={
+              msg.pending?.type === "confirm_update" && savingId !== msg.id
+                ? (updates) => handleConfirmUpdate(msg.id, (msg.pending as { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate }).task, updates)
                 : undefined
             }
+            onCancel={msg.pending && savingId !== msg.id ? () => handleCancel(msg.id) : undefined}
           />
         ))}
         <div ref={bottomRef} />
       </div>
 
-      {/* Example pills — shown only when idle */}
+      {/* Example pills */}
       {messages.length === 1 && !loading && (
         <div className="px-4 pb-2 flex flex-wrap gap-2">
           {EXAMPLES.map((ex) => (
-            <button
-              key={ex}
-              onClick={() => handleSend(ex)}
-              className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-full border border-zinc-700 transition-colors"
-            >
+            <button key={ex} onClick={() => handleSend(ex)}
+              className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-full border border-zinc-700 transition-colors">
               {ex}
             </button>
           ))}
         </div>
       )}
 
-      {/* Input area */}
+      {/* Input */}
       <div className="px-4 py-3 border-t border-zinc-800 shrink-0">
-        <div
-          className={`flex items-end gap-2 bg-zinc-900 border rounded-2xl px-3 py-2 transition-colors ${
-            hasActiveConfirm
-              ? "border-zinc-700 opacity-60"
-              : "border-zinc-700 focus-within:border-indigo-500"
-          }`}
-        >
+        <div className={`flex items-end gap-2 bg-zinc-900 border rounded-2xl px-3 py-2 transition-colors ${
+          hasActivePending ? "border-zinc-700 opacity-60" : "border-zinc-700 focus-within:border-indigo-500"
+        }`}>
           <textarea
             ref={inputRef}
             rows={1}
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            disabled={loading || hasActiveConfirm}
-            placeholder={
-              hasActiveConfirm
-                ? "Conferma o annulla la task sopra…"
-                : "Scrivi una task in italiano…"
-            }
+            disabled={loading || hasActivePending}
+            placeholder={hasActivePending ? "Conferma o annulla prima di continuare…" : "Task, fattura, ore, aggiorna…"}
             className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 resize-none outline-none leading-5 max-h-[120px] py-0.5 disabled:cursor-not-allowed"
           />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || loading || hasActiveConfirm}
+          <button onClick={() => handleSend()} disabled={!input.trim() || loading || hasActivePending}
             className="shrink-0 mb-0.5 w-8 h-8 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-            aria-label="Invia"
-          >
+            aria-label="Invia">
             {loading ? (
-              <svg
-                className="w-4 h-4 text-white animate-spin"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8v8H4z"
-                />
+              <svg className="w-4 h-4 text-white animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
               </svg>
             ) : (
-              <svg
-                className="w-4 h-4 text-white"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
-                />
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
               </svg>
             )}
           </button>
         </div>
         <p className="text-center text-xs text-zinc-600 mt-2">
-          Invio con <kbd className="font-mono">Enter</kbd> · a capo con{" "}
-          <kbd className="font-mono">Shift+Enter</kbd>
+          <kbd className="font-mono">Enter</kbd> invia · <kbd className="font-mono">Shift+Enter</kbd> a capo
         </p>
       </div>
     </div>

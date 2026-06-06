@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseTask } from "@/lib/ai";
+import { parseIntent } from "@/lib/ai";
 
 export async function POST(req: NextRequest) {
   try {
@@ -7,9 +7,9 @@ export async function POST(req: NextRequest) {
     if (!message?.trim()) {
       return NextResponse.json({ error: "Messaggio vuoto" }, { status: 400 });
     }
-    const task = await parseTask(message);
-    return NextResponse.json({ task });
-  } catch (err) {
+    const result = await parseIntent(message);
+    return NextResponse.json(result);
+  } catch (err: unknown) {
     console.error("Parse error:", err);
     return NextResponse.json(
       { error: "Errore nell'interpretazione del messaggio" },
