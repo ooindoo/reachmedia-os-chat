@@ -11,6 +11,20 @@ export interface Reminder {
 
 const STORAGE_KEY = "rm-task-reminders";
 
+// ── Guards ─────────────────────────────────────────────────────────────────────
+/** true only when Notification API exists AND permission is granted */
+function notifGranted(): boolean {
+  return typeof Notification !== "undefined" && Notification.permission === "granted";
+}
+
+/** Safe UUID — falls back to Math.random on older iOS/browsers */
+function randomId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
 // ── Storage helpers ────────────────────────────────────────────────────────────
 export function getReminders(): Reminder[] {
   if (typeof window === "undefined") return [];
@@ -21,25 +35,26 @@ export function getReminders(): Reminder[] {
   }
 }
 
+function setReminders(reminders: Reminder[]) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(reminders)); } catch { /* noop */ }
+}
+
 export function saveReminder(data: Omit<Reminder, "id" | "notified" | "createdAt">): string {
-  const id = crypto.randomUUID();
+  const id = randomId();
   const reminders = getReminders();
   reminders.push({ ...data, id, notified: false, createdAt: Date.now() });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(reminders));
+  setReminders(reminders);
   return id;
 }
 
 export function markNotified(id: string) {
-  const updated = getReminders().map((r) =>
-    r.id === id ? { ...r, notified: true } : r
-  );
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  setReminders(getReminders().map((r) => (r.id === id ? { ...r, notified: true } : r)));
 }
 
 export function cleanOldReminders() {
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const fresh = getReminders().filter((r) => r.createdAt > cutoff);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+  setReminders(getReminders().filter((r) => r.createdAt > cutoff));
 }
 
 // ── Try Notification Triggers API (Chrome Android only) ───────────────────────
@@ -59,7 +74,7 @@ async function tryTriggerAPI(
       body,
       icon: "/favicon.ico",
       badge: "/favicon.ico",
-      data: { notionUrl }, // passed to sw notificationclick handler
+      data: { notionUrl },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       showTrigger: new (window as any).TimestampTrigger(at.getTime()),
     });
@@ -71,7 +86,7 @@ async function tryTriggerAPI(
 
 // ── Fire notification now ─────────────────────────────────────────────────────
 export function fireReminder(reminder: Reminder) {
-  if (Notification.permission !== "granted") return;
+  if (!notifGranted()) return;
   markNotified(reminder.id);
   const body = `${reminder.taskTitle}${reminder.cliente ? " · " + reminder.cliente : ""}\nClicca per aprire su Notion`;
   try {
@@ -79,15 +94,10 @@ export function fireReminder(reminder: Reminder) {
       body,
       icon: "/favicon.ico",
       tag: reminder.id,
-      // Note: `data` is not part of the standard Notification constructor,
-      // but we use onclick closure to handle the URL
     });
-    // Click handler: open the Notion task URL
     notif.onclick = () => {
       notif.close();
-      if (reminder.notionUrl) {
-        window.open(reminder.notionUrl, "_blank");
-      }
+      if (reminder.notionUrl) window.open(reminder.notionUrl, "_blank");
       window.focus();
     };
   } catch {
@@ -97,57 +107,41 @@ export function fireReminder(reminder: Reminder) {
 
 // ── Schedule a single reminder ─────────────────────────────────────────────────
 export async function scheduleReminder(reminder: Reminder) {
-  if (Notification.permission !== "granted") return;
+  if (!notifGranted()) return;
 
   const at = new Date(reminder.reminderAt);
   const delay = at.getTime() - Date.now();
-
   const title = "📋 Reminder task";
   const body = `${reminder.taskTitle}${reminder.cliente ? " · " + reminder.cliente : ""}`;
 
   if (delay <= 0) {
-    // Past but within 1h → fire immediately
     if (delay > -60 * 60 * 1000) fireReminder(reminder);
     return;
   }
 
-  // Try Notification Triggers API (Chrome Android — works when app is closed)
   const triggered = await tryTriggerAPI(title, body, at, reminder.notionUrl);
-  if (triggered) {
-    markNotified(reminder.id);
-    return;
-  }
+  if (triggered) { markNotified(reminder.id); return; }
 
-  // Fallback: precise setTimeout (works while tab is open)
   if (delay <= 48 * 60 * 60 * 1000) {
     setTimeout(() => fireReminder(reminder), delay);
   }
 }
 
-// ── Poll check — call this on interval & visibilitychange ─────────────────────
-// This is the Mac/Desktop fallback: checks every ~60s and fires overdue reminders
+// ── Poll check ────────────────────────────────────────────────────────────────
 export function checkDueReminders() {
-  if (Notification.permission !== "granted") return;
+  if (!notifGranted()) return;
   const now = Date.now();
-  const pending = getReminders().filter((r) => !r.notified);
-
-  for (const r of pending) {
-    const reminderTime = new Date(r.reminderAt).getTime();
-    const overdue = now - reminderTime;
-    // Fire if within a ±5 minute window (overdue but not too old)
-    if (overdue >= 0 && overdue < 5 * 60 * 1000) {
-      fireReminder(r);
-    }
+  for (const r of getReminders().filter((r) => !r.notified)) {
+    const overdue = now - new Date(r.reminderAt).getTime();
+    if (overdue >= 0 && overdue < 5 * 60 * 1000) fireReminder(r);
   }
 }
 
 // ── Bootstrap on app load ─────────────────────────────────────────────────────
 export async function bootstrapReminders() {
   cleanOldReminders();
-  const pending = getReminders().filter((r) => !r.notified);
-  for (const r of pending) {
+  for (const r of getReminders().filter((r) => !r.notified)) {
     await scheduleReminder(r);
   }
-  // Check immediately for any overdue reminders
   checkDueReminders();
 }

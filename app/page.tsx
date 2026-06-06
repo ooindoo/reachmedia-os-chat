@@ -39,7 +39,10 @@ async function sendNotification(title: string, body: string) {
   }
 }
 
-const uid = () => crypto.randomUUID();
+const uid = (): string =>
+  typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36);
 
 // ── Shared input/button helpers ────────────────────────────────────────────────
 function SendButton({ loading, onClick, disabled }: { loading: boolean; onClick: () => void; disabled: boolean }) {
@@ -80,13 +83,16 @@ export default function ChatPage() {
     } catch { /* noop */ }
 
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-    if (Notification.permission === "granted") bootstrapReminders();
+
+    // Guard: Notification API not available on iOS < 16.4 and some webviews
+    const notifOk = typeof Notification !== "undefined" && Notification.permission === "granted";
+    if (notifOk) bootstrapReminders();
 
     const poll = setInterval(() => {
-      if (Notification.permission === "granted") checkDueReminders();
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") checkDueReminders();
     }, 60_000);
     const onVisible = () => {
-      if (document.visibilityState === "visible" && Notification.permission === "granted") checkDueReminders();
+      if (document.visibilityState === "visible" && typeof Notification !== "undefined" && Notification.permission === "granted") checkDueReminders();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => { clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
