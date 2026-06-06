@@ -303,9 +303,19 @@ export default function ChatPage() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="shrink-0 flex items-center justify-between px-4 md:px-6 py-4 border-b border-[#1a1a1a]">
-        <h1 className="font-display text-2xl md:text-3xl tracking-display text-white hover:opacity-70 transition-opacity duration-200 leading-none">
-          REACHMEDIA.IT
-        </h1>
+        <div className="flex items-center gap-3">
+          {/* 3D rotating sphere */}
+          <div style={{ perspective: "200px", flexShrink: 0 }}>
+            <div className="rm-sphere w-9 h-9 md:w-12 md:h-12 flex items-center justify-center">
+              <span className="text-[#CCFF00] font-black text-[13px] md:text-base leading-none" style={{ position: "relative", zIndex: 1 }}>
+                RM
+              </span>
+            </div>
+          </div>
+          <h1 className="font-display text-2xl md:text-3xl tracking-display text-white hover:opacity-70 transition-opacity duration-200 leading-none">
+            REACHMEDIA.IT
+          </h1>
+        </div>
         <button
           onClick={toggleNotifications}
           className="flex items-center gap-2.5 shrink-0 min-h-[44px] min-w-[44px] justify-end"

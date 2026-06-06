@@ -37,6 +37,44 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); opaci
 /* ── Focus ring — none ─────────────────────────────────────────────────────── */
 * { outline: none; }
 
+/* ── Sphere logo — override zero-radius reset via class specificity ──────── */
+@keyframes rm-spin-y {
+  from { transform: rotateY(0deg); }
+  to   { transform: rotateY(360deg); }
+}
+
+/* Class selector (0,1,0) beats universal * (0,0,0) even with !important */
+.rm-sphere,
+.rm-sphere::before {
+  border-radius: 50% !important;
+}
+
+.rm-sphere {
+  position: relative;
+  background: #000000;
+  border: 2px solid #CCFF00;
+  animation: rm-spin-y 8s linear infinite;
+  will-change: transform;
+  flex-shrink: 0;
+  user-select: none;
+  cursor: default;
+}
+
+/* Light reflection overlay — bright top-left, dark bottom-right */
+.rm-sphere::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 32% 32%, rgba(204,255,0,0.14) 0%, transparent 52%),
+    radial-gradient(circle at 68% 68%, rgba(0,0,0,0.42) 0%, transparent 52%);
+  pointer-events: none;
+}
+
+.rm-sphere:hover {
+  animation-duration: 16s;
+}
+
 /* ── Select: remove native arrow, add custom ─────────────────────────────── */
 .rm-select-arrow {
   -webkit-appearance: none;
