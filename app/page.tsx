@@ -224,9 +224,9 @@ export default function ChatPage() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="shrink-0 flex items-center justify-between px-4 md:px-6 py-4 border-b border-[#1a1a1a]">
         <div>
-          <h1 className="text-white font-black uppercase tracking-tight text-[15px] leading-none">
+          <span className="font-display text-2xl md:text-3xl tracking-display transition-all duration-200 text-white hover:opacity-70 leading-none block">
             REACHMEDIA.IT
-          </h1>
+          </span>
           <p className="text-[#444] text-[11px] mt-1">OS · Task · Fatture · Time Log</p>
         </div>
         <button

@@ -31,6 +31,12 @@ const config: Config = {
           faint:    "#333333",
         },
       },
+      fontFamily: {
+        display: ["var(--font-geist-sans)", "system-ui", "-apple-system", "sans-serif"],
+      },
+      letterSpacing: {
+        display: "-0.03em",
+      },
     },
   },
   plugins: [],
