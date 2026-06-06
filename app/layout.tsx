@@ -13,11 +13,8 @@ export const metadata: Metadata = {
   description: "Task · Fatture · Time Log per reachmedia.it",
   manifest: "/manifest.json",
   icons: {
-    icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-    ],
-    apple: { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+    icon: { url: "/favicon.svg", type: "image/svg+xml" },
+    // apple-touch-icon and icon.png auto-served from app/apple-icon.tsx + app/icon.tsx
   },
   appleWebApp: {
     capable: true,
