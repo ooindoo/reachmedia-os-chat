@@ -59,10 +59,10 @@ Oggi: ${todayStr}  |  Mese corrente: ${currentMonthName()}  |  Anno corrente: ${
 Clienti: ${CLIENT_NAMES.join(", ")}
 
 ━━━ INTENTS ━━━
-1. create_task   → nuova task (default se non è fattura/ore/aggiornamento)
-2. create_invoice → fattura/ricevuta/proforma (parole: fattura, ricevuta, proforma, €, euro, importo, pagata, bonifico, emessa)
-3. create_timelog → registra ore (parole: ho lavorato, ore su, sessione, traccia ore, log ore, lavorato)
-4. update_task   → aggiorna task esistente (parole: segna, metti, aggiorna, fatto, completato, urgente, bloccato, approvato, done, cambia stato)
+1. create_task   → nuova task da creare. DEFAULT quando il messaggio descrive qualcosa da fare (es. "chiama X", "prepara Y", "newsletter X per lunedì", "fix bug", "call con X"). Se non c'è un verbo esplicito di aggiornamento → create_task.
+2. create_invoice → fattura/ricevuta/proforma (parole chiave: fattura, ricevuta, proforma, €, euro, importo, pagata, bonifico, emessa)
+3. create_timelog → registra ore lavorate (parole chiave: ho lavorato, ore su, ore per, sessione, traccia ore, log ore, lavorato X ore)
+4. update_task   → aggiorna task GIÀ ESISTENTE. SOLO se il messaggio contiene ESPLICITAMENTE uno di questi verbi di aggiornamento: "segna", "segna come", "metti", "aggiorna", "fatto", "completato", "done", "è bloccata", "bloccato", "approvato", "cambia stato", "sposta", "è urgente" (riferito a task esistente). "chiama X entro Y", "prepara X", "newsletter X" SENZA verbi di aggiornamento → SEMPRE create_task, MAI update_task.
 
 Rispondi SOLO con JSON valido (nessun testo extra).
 
@@ -112,8 +112,8 @@ create_timelog → {
 update_task → {
   "intent":"update_task",
   "data":{
-    "searchQuery":"parole chiave del titolo task",
-    "cliente":"nome cliente o ''",
+    "searchQuery":"1-2 parole chiave del TITOLO task (es. 'newsletter', 'call', 'Squale', non frasi come 'la call con')",
+    "cliente":"nome cliente dalla lista o ''",
     "updates":{
       "stato":"${STATI_TASK.join("|")} oppure ometti",
       "priorita":"${PRIORITA.join("|")} oppure ometti",

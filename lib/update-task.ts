@@ -51,12 +51,31 @@ async function queryDatabase(
   return data.results as AnyPage[];
 }
 
+// Build fuzzy OR filter: searches the full phrase AND each individual word (≥3 chars)
+function buildTitleFilter(query: string) {
+  const words = query
+    .split(/\s+/)
+    .map((w) => w.replace(/[^a-zA-ZÀ-ÿ0-9]/g, ""))
+    .filter((w) => w.length >= 3);
+
+  const candidates = [query, ...words].filter(
+    (v, i, arr) => arr.indexOf(v) === i // dedupe
+  );
+
+  if (candidates.length === 1) {
+    return { property: "Task", title: { contains: candidates[0] } };
+  }
+  return {
+    or: candidates.map((c) => ({ property: "Task", title: { contains: c } })),
+  };
+}
+
 export async function searchTasks(
   query: string,
   clienteName?: string
 ): Promise<TaskSearchResult[]> {
   const dbId = process.env.NOTION_TASK_DB!;
-  const titleFilter = { property: "Task", title: { contains: query } };
+  const titleFilter = buildTitleFilter(query);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let filter: Record<string, any> = titleFilter;
