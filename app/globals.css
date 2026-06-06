@@ -2,48 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #09090b;
-  --foreground: #fafafa;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  height: 100%;
-  overflow: hidden;
-}
+/* ── Reset & base ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; border-radius: 0 !important; }
+html, body { height: 100%; overflow: hidden; margin: 0; padding: 0; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  background: #000000;
+  color: #FFFFFF;
+  font-family: system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 4px;
-}
-::-webkit-scrollbar-track {
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 2px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333333; }
+
+/* ── Form elements dark mode ─────────────────────────────────────────────── */
+input[type="date"], input[type="time"], select { color-scheme: dark; }
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.3; cursor: pointer; }
+
+/* ── Focus ring — none by default, custom per component ─────────────────── */
+* { outline: none; }
+
+/* ── RM Input style — only bottom border ────────────────────────────────── */
+.rm-input {
   background: transparent;
+  border: none;
+  border-bottom: 1px solid #333333;
+  color: #FFFFFF;
+  width: 100%;
+  padding: 6px 0;
+  font-size: 0.875rem;
 }
-::-webkit-scrollbar-thumb {
-  background: #3f3f46;
-  border-radius: 99px;
-}
+.rm-input::placeholder { color: #444444; }
+.rm-input:focus { border-bottom-color: #CCFF00; }
 
-/* Date input dark styling */
-input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1);
-  opacity: 0.5;
+/* ── RM Select style ─────────────────────────────────────────────────────── */
+.rm-select {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #333333;
+  color: #FFFFFF;
+  width: 100%;
+  padding: 6px 0;
+  font-size: 0.875rem;
   cursor: pointer;
 }
+.rm-select:focus { border-bottom-color: #CCFF00; }
+.rm-select option { background: #111111; color: #FFFFFF; }
 
-input[type="date"],
-select {
-  color-scheme: dark;
+/* ── Accent chip / badge ─────────────────────────────────────────────────── */
+.rm-chip {
+  display: inline-block;
+  background: #CCFF00;
+  color: #000000;
+  font-weight: 900;
+  font-size: 0.625rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+}
+
+/* ── Label ───────────────────────────────────────────────────────────────── */
+.rm-label {
+  display: block;
+  color: #666666;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 4px;
 }

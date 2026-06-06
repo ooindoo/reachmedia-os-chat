@@ -14,108 +14,96 @@ interface Props {
 export default function TaskUpdateCard({ task, updates, onConfirm, onCancel }: Props) {
   const [e, setE] = useState<TaskUpdate>({ ...updates });
   const set = <K extends keyof TaskUpdate>(k: K, v: TaskUpdate[K]) => setE((p) => ({ ...p, [k]: v }));
-
-  const changedCount = Object.values(e).filter((v) => v !== undefined && v !== null && v !== "").length;
+  const changed = Object.values(e).filter((v) => v !== undefined && v !== null && v !== "").length;
 
   return (
-    <div className="bg-zinc-800 border border-blue-700/50 rounded-2xl p-4 space-y-3 max-w-sm w-full">
-      <p className="text-xs text-blue-400 uppercase tracking-widest font-semibold">✏️ Aggiorna task</p>
-
-      {/* Task header */}
-      <div className="bg-zinc-900/60 rounded-xl px-3 py-2.5">
-        <p className="text-sm text-white font-medium leading-snug">{task.titolo}</p>
-        {task.cliente && <p className="text-xs text-zinc-400 mt-0.5">{task.cliente}</p>}
-        <div className="flex gap-2 mt-1">
-          {task.stato && <span className="text-xs text-zinc-500">{task.stato}</span>}
-          {task.priorita && <span className="text-xs text-zinc-500">{task.priorita}</span>}
-        </div>
+    <div className="bg-rm-surface border border-rm-border w-full max-w-[480px]">
+      <div className="border-b border-rm-border px-4 py-3">
+        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-rm-muted">AGGIORNA TASK</span>
       </div>
 
-      {/* Stato */}
-      {"stato" in e && (
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">Stato</label>
-          <div className="flex gap-1.5">
-            {STATI_TASK.map((s) => (
-              <button key={s} onClick={() => set("stato", s)}
-                className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${e.stato === s ? "border-blue-500 bg-blue-500/20 text-white" : "border-zinc-700 text-zinc-400 hover:border-zinc-500"}`}>
-                {s}
-              </button>
-            ))}
+      {/* Task preview */}
+      <div className="px-4 py-3 border-b border-rm-border bg-rm-surface2">
+        <p className="text-white text-sm font-bold uppercase truncate">{task.titolo}</p>
+        {task.cliente && <p className="text-rm-muted text-[10px] uppercase tracking-wide mt-0.5">{task.cliente}</p>}
+      </div>
+
+      <div className="px-4 py-4 space-y-4">
+        {"stato" in e && (
+          <div>
+            <label className="rm-label">STATO</label>
+            <div className="flex gap-2 mt-1">
+              {STATI_TASK.map((s) => (
+                <button key={s} onClick={() => set("stato", s)}
+                  className={`flex-1 py-1.5 text-[10px] font-black uppercase transition-colors ${e.stato === s ? "bg-rm-accent text-black" : "border border-rm-border text-rm-muted hover:text-white"}`}>
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Priorità */}
-      {"priorita" in e && (
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">Priorità</label>
-          <div className="flex gap-1.5">
-            {PRIORITA.map((p) => (
-              <button key={p} onClick={() => set("priorita", p)}
-                className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${e.priorita === p ? "border-blue-500 bg-blue-500/20 text-white" : "border-zinc-700 text-zinc-400 hover:border-zinc-500"}`}>
-                {p}
-              </button>
-            ))}
+        {"priorita" in e && (
+          <div>
+            <label className="rm-label">PRIORITÀ</label>
+            <div className="flex gap-2 mt-1">
+              {PRIORITA.map((p) => (
+                <button key={p} onClick={() => set("priorita", p)}
+                  className={`flex-1 py-1.5 text-[10px] font-black uppercase transition-colors ${e.priorita === p ? "bg-rm-accent text-black" : "border border-rm-border text-rm-muted hover:text-white"}`}>
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Bloccato da */}
-      {"bloccatoDa" in e && (
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">Bloccato da</label>
-          <select className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-blue-500 outline-none"
-            value={e.bloccatoDa ?? ""} onChange={(ev) => set("bloccatoDa", ev.target.value)}>
-            {BLOCCATO_DA_OPTS.map((b) => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </div>
-      )}
+        {"bloccatoDa" in e && (
+          <div>
+            <label className="rm-label">BLOCCATO DA</label>
+            <select className="rm-select" value={e.bloccatoDa ?? ""} onChange={(ev) => set("bloccatoDa", ev.target.value)}>
+              {BLOCCATO_DA_OPTS.map((b) => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+        )}
 
-      {/* Approvazione cliente */}
-      {"approvazioneCliente" in e && (
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">Approvazione cliente</label>
-          <select className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-blue-500 outline-none"
-            value={e.approvazioneCliente ?? ""} onChange={(ev) => set("approvazioneCliente", ev.target.value)}>
-            {APPROVAZIONE_OPTS.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-        </div>
-      )}
+        {"approvazioneCliente" in e && (
+          <div>
+            <label className="rm-label">APPROVAZIONE CLIENTE</label>
+            <select className="rm-select" value={e.approvazioneCliente ?? ""} onChange={(ev) => set("approvazioneCliente", ev.target.value)}>
+              {APPROVAZIONE_OPTS.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+        )}
 
-      {/* Deadline */}
-      {"deadline" in e && (
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">Deadline</label>
-          <input type="date" className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-blue-500 outline-none"
-            value={e.deadline ?? ""} onChange={(ev) => set("deadline", ev.target.value)} />
-        </div>
-      )}
+        {"deadline" in e && (
+          <div>
+            <label className="rm-label">DEADLINE</label>
+            <input type="date" className="rm-input" value={e.deadline ?? ""} onChange={(ev) => set("deadline", ev.target.value)} />
+          </div>
+        )}
 
-      {/* Ore reali */}
-      {"tempoReale" in e && (
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">Ore reali</label>
-          <input type="number" step="0.5" min="0"
-            className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-blue-500 outline-none"
-            value={e.tempoReale ?? 0} onChange={(ev) => set("tempoReale", parseFloat(ev.target.value) || 0)} />
-        </div>
-      )}
+        {"tempoReale" in e && (
+          <div>
+            <label className="rm-label">ORE REALI</label>
+            <input type="number" step="0.5" min="0" className="rm-input"
+              value={e.tempoReale ?? 0} onChange={(ev) => set("tempoReale", parseFloat(ev.target.value) || 0)} />
+          </div>
+        )}
 
-      {/* Note */}
-      {"note" in e && (
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">Note</label>
-          <textarea rows={2} className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-blue-500 outline-none resize-none"
-            value={e.note ?? ""} onChange={(ev) => set("note", ev.target.value)} />
-        </div>
-      )}
+        {"note" in e && (
+          <div>
+            <label className="rm-label">NOTE</label>
+            <textarea rows={2} className="rm-input resize-none"
+              value={e.note ?? ""} onChange={(ev) => set("note", ev.target.value)} />
+          </div>
+        )}
+      </div>
 
-      <div className="flex gap-2 pt-1">
-        <button onClick={onCancel} className="flex-1 py-2 rounded-xl text-sm text-zinc-400 border border-zinc-700 hover:border-zinc-500 transition-colors">Annulla</button>
-        <button onClick={() => onConfirm(e)} disabled={changedCount === 0}
-          className="flex-1 py-2 rounded-xl text-sm font-semibold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white transition-colors">
-          Aggiorna
+      <div className="border-t border-rm-border flex">
+        <button onClick={onCancel} className="flex-1 py-3 text-xs text-rm-muted uppercase tracking-[0.12em] font-semibold border-r border-rm-border hover:text-white transition-colors">ANNULLA</button>
+        <button onClick={() => onConfirm(e)} disabled={changed === 0}
+          className="flex-[2] py-3 bg-rm-accent text-black text-xs font-black uppercase tracking-[0.1em] hover:bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+          AGGIORNA
         </button>
       </div>
     </div>

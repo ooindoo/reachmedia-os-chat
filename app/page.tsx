@@ -24,36 +24,32 @@ export interface Message {
   notionUrl?: string;
 }
 
+// ── Examples ───────────────────────────────────────────────────────────────────
+const EXAMPLES = [
+  { label: "TASK", text: "chiama Squale venerdì" },
+  { label: "FATTURA", text: "fattura CappellettoShop 1500€ giugno" },
+  { label: "ORE", text: "3h su NOESI analytics oggi" },
+  { label: "UPDATE", text: "segna fatto newsletter Markershop" },
+];
+
 // ── Notification helper ────────────────────────────────────────────────────────
 async function sendNotification(title: string, body: string) {
   if (typeof window === "undefined" || !("Notification" in window)) return;
-  if (Notification.permission === "default") {
-    await Notification.requestPermission();
-  }
+  if (Notification.permission === "default") await Notification.requestPermission();
   if (Notification.permission === "granted") {
-    new Notification(title, { body, icon: "/favicon.ico", badge: "/favicon.ico" });
+    new Notification(title, { body, icon: "/favicon.svg" });
   }
 }
 
-// ── Examples ───────────────────────────────────────────────────────────────────
-const EXAMPLES = [
-  "chiama Squale entro venerdì",
-  "newsletter CappellettoShop per lunedì",
-  "fattura Squale 2000€ giugno pagata con bonifico",
-  "ho lavorato 3 ore su NOESI su analytics oggi",
-  "segna come fatto la call con Squale",
-];
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
 const uid = () => crypto.randomUUID();
 
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
-      content:
-        "Ciao! 👋 Dimmi cosa devo fare:\n• Task: «chiama Squale venerdì»\n• Fattura: «fattura CappellettoShop 1500€ giugno»\n• Ore: «ho lavorato 2h su NOESI oggi alle 14»\n• Aggiorna: «segna come fatto la newsletter Markershop»",
+      content: "Ciao. Dimmi cosa devo fare:\n• «chiama Squale venerdì»\n• «fattura CappellettoShop 1500€»\n• «3h su NOESI analytics oggi»\n• «segna fatto newsletter Markershop»",
     },
   ]);
   const [input, setInput] = useState("");
@@ -63,57 +59,23 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load notification pref + register SW + bootstrap reminders
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("rm-notifications");
-      if (saved === "true") setNotificationsOn(true);
+      if (localStorage.getItem("rm-notifications") === "true") setNotificationsOn(true);
     } catch { /* noop */ }
 
-    // Register service worker (enables Notification Triggers API on Chrome/Android)
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
-    }
+    if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+    if (Notification.permission === "granted") bootstrapReminders();
 
-    // Reschedule + check overdue reminders from previous sessions
-    if (Notification.permission === "granted") {
-      bootstrapReminders();
-    }
-
-    // ── Polling fallback for Mac/Desktop (tab must be open) ──────────────────
-    // Checks every 60s for due reminders — catches any that setTimeout missed
     const poll = setInterval(() => {
       if (Notification.permission === "granted") checkDueReminders();
     }, 60_000);
-
-    // Also check whenever the user focuses the tab (e.g. returns from another app)
     const onVisible = () => {
-      if (document.visibilityState === "visible" && Notification.permission === "granted") {
-        checkDueReminders();
-      }
+      if (document.visibilityState === "visible" && Notification.permission === "granted") checkDueReminders();
     };
     document.addEventListener("visibilitychange", onVisible);
-
-    return () => {
-      clearInterval(poll);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    return () => { clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
-
-  const toggleNotifications = async () => {
-    if (!notificationsOn) {
-      // Request permission first
-      if (typeof window !== "undefined" && "Notification" in window) {
-        const perm = await Notification.requestPermission();
-        if (perm !== "granted") return; // User denied
-      }
-      setNotificationsOn(true);
-      localStorage.setItem("rm-notifications", "true");
-    } else {
-      setNotificationsOn(false);
-      localStorage.setItem("rm-notifications", "false");
-    }
-  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -125,235 +87,134 @@ export default function ChatPage() {
     ev.target.style.height = Math.min(ev.target.scrollHeight, 120) + "px";
   };
 
-  // ── Update a message in place ──────────────────────────────────────────────
   const patchMsg = (id: string, patch: Partial<Message>) =>
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
 
-  // ── Send & Parse ───────────────────────────────────────────────────────────
-  const handleSend = useCallback(
-    async (text?: string) => {
-      const userText = (text ?? input).trim();
-      if (!userText || loading) return;
-
-      setInput("");
-      if (inputRef.current) inputRef.current.style.height = "auto";
-
-      setMessages((prev) => [...prev, { id: uid(), role: "user", content: userText }]);
-      setLoading(true);
-
-      const thinkingId = uid();
-      setMessages((prev) => [...prev, { id: thinkingId, role: "assistant", content: "⏳ Analizzo…" }]);
-
-      try {
-        // 1. Parse intent
-        const parseRes = await fetch("/api/parse", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: userText }),
-        });
-        const parsed = await parseRes.json();
-
-        if (!parseRes.ok) {
-          patchMsg(thinkingId, { content: `❌ ${parsed.error ?? "Errore di analisi"}` });
-          return;
-        }
-
-        // 2. Route by intent
-        if (parsed.intent === "create_task") {
-          patchMsg(thinkingId, {
-            content: "📋 Task estratta — modificala se serve:",
-            pending: { type: "create_task", data: parsed.data },
-          });
-        } else if (parsed.intent === "create_invoice") {
-          patchMsg(thinkingId, {
-            content: "📄 Fattura estratta — modificala se serve:",
-            pending: { type: "create_invoice", data: parsed.data },
-          });
-        } else if (parsed.intent === "create_timelog") {
-          patchMsg(thinkingId, {
-            content: "⏱ Sessione estratta — modificala se serve:",
-            pending: { type: "create_timelog", data: parsed.data },
-          });
-        } else if (parsed.intent === "update_task") {
-          // Search tasks
-          patchMsg(thinkingId, { content: "🔍 Cerco la task…" });
-          const sq = encodeURIComponent(parsed.searchQuery || "");
-          const cl = encodeURIComponent(parsed.cliente || "");
-          const searchRes = await fetch(`/api/search-tasks?q=${sq}&cliente=${cl}`);
-          const searchData = await searchRes.json();
-
-          if (!searchRes.ok || !searchData.tasks) {
-            patchMsg(thinkingId, { content: `❌ ${searchData.error ?? "Errore ricerca"}` });
-            return;
-          }
-
-          const tasks: TaskSearchResult[] = searchData.tasks;
-          if (tasks.length === 0) {
-            const clienteHint = parsed.cliente ? ` per ${parsed.cliente}` : "";
-            patchMsg(thinkingId, {
-              content: `🔍 Nessuna task trovata${clienteHint}.\n\nSuggerimento: usa una parola chiave del titolo esatto della task in Notion (es. «segna fatto Chiama Squale» se la task si chiama "Chiama Squale SA").`,
-            });
-          } else if (tasks.length === 1) {
-            patchMsg(thinkingId, {
-              content: "✏️ Ecco cosa cambierò — conferma:",
-              pending: { type: "confirm_update", task: tasks[0], updates: parsed.updates },
-            });
-          } else {
-            patchMsg(thinkingId, {
-              content: `Ho trovato ${tasks.length} task simili — quale vuoi aggiornare?`,
-              pending: { type: "select_task", tasks, updates: parsed.updates },
-            });
-          }
-        } else {
-          patchMsg(thinkingId, { content: "Non ho capito. Prova con un messaggio più specifico." });
-        }
-      } catch {
-        patchMsg(thinkingId, { content: "❌ Errore di rete. Controlla la connessione." });
-      } finally {
-        setLoading(false);
+  const toggleNotifications = async () => {
+    if (!notificationsOn) {
+      if (typeof window !== "undefined" && "Notification" in window) {
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") return;
       }
-    },
-    [input, loading]
-  );
+      setNotificationsOn(true);
+      localStorage.setItem("rm-notifications", "true");
+    } else {
+      setNotificationsOn(false);
+      localStorage.setItem("rm-notifications", "false");
+    }
+  };
 
-  // ── Confirm Task ───────────────────────────────────────────────────────────
+  // ── Send ──────────────────────────────────────────────────────────────────
+  const handleSend = useCallback(async (text?: string) => {
+    const userText = (text ?? input).trim();
+    if (!userText || loading) return;
+    setInput("");
+    if (inputRef.current) inputRef.current.style.height = "auto";
+    setMessages((prev) => [...prev, { id: uid(), role: "user", content: userText }]);
+    setLoading(true);
+    const thinkingId = uid();
+    setMessages((prev) => [...prev, { id: thinkingId, role: "assistant", content: "—" }]);
+
+    try {
+      const parseRes = await fetch("/api/parse", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userText }),
+      });
+      const parsed = await parseRes.json();
+      if (!parseRes.ok) { patchMsg(thinkingId, { content: `❌ ${parsed.error ?? "Errore"}` }); return; }
+
+      if (parsed.intent === "create_task") {
+        patchMsg(thinkingId, { content: "Ecco la task estratta — modifica e conferma:", pending: { type: "create_task", data: parsed.data } });
+      } else if (parsed.intent === "create_invoice") {
+        patchMsg(thinkingId, { content: "Fattura estratta — modifica e conferma:", pending: { type: "create_invoice", data: parsed.data } });
+      } else if (parsed.intent === "create_timelog") {
+        patchMsg(thinkingId, { content: "Sessione estratta — modifica e conferma:", pending: { type: "create_timelog", data: parsed.data } });
+      } else if (parsed.intent === "update_task") {
+        patchMsg(thinkingId, { content: "Cerco la task…" });
+        const sq = encodeURIComponent(parsed.searchQuery || "");
+        const cl = encodeURIComponent(parsed.cliente || "");
+        const searchRes = await fetch(`/api/search-tasks?q=${sq}&cliente=${cl}`);
+        const searchData = await searchRes.json();
+        if (!searchRes.ok || !searchData.tasks) { patchMsg(thinkingId, { content: `❌ ${searchData.error ?? "Errore ricerca"}` }); return; }
+        const tasks: TaskSearchResult[] = searchData.tasks;
+        if (tasks.length === 0) {
+          patchMsg(thinkingId, { content: `Nessuna task trovata${parsed.cliente ? " per " + parsed.cliente : ""}.\n\nUsa una parola del titolo esatto in Notion.` });
+        } else if (tasks.length === 1) {
+          patchMsg(thinkingId, { content: "Task trovata — conferma le modifiche:", pending: { type: "confirm_update", task: tasks[0], updates: parsed.updates } });
+        } else {
+          patchMsg(thinkingId, { content: `${tasks.length} task trovate — scegli quale aggiornare:`, pending: { type: "select_task", tasks, updates: parsed.updates } });
+        }
+      } else {
+        patchMsg(thinkingId, { content: "Non ho capito. Riprova." });
+      }
+    } catch {
+      patchMsg(thinkingId, { content: "❌ Errore di rete." });
+    } finally {
+      setLoading(false);
+    }
+  }, [input, loading]);
+
+  // ── Confirm handlers ──────────────────────────────────────────────────────
   const handleConfirmTask = async (msgId: string, task: TaskData) => {
-    patchMsg(msgId, { pending: undefined, content: "✅ Salvataggio task…" });
+    patchMsg(msgId, { pending: undefined, content: "Salvataggio…" });
     setSavingId(msgId);
     try {
-      const res = await fetch("/api/create-task", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task }),
-      });
+      const res = await fetch("/api/create-task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task }) });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore salvataggio task"}` });
-      } else {
-        // Schedule reminder if set
-        if (notificationsOn && task.reminderDate && task.reminderTime) {
-          const reminderAt = `${task.reminderDate}T${task.reminderTime}:00`;
-          const reminderData = {
-            taskTitle: task.titolo,
-            cliente: task.cliente,
-            reminderAt,
-            notionUrl: data.url ?? "",
-          };
-          const rid = saveReminder(reminderData);
-          // Schedule with new API (no callback needed — fireReminder handles it)
-          await scheduleReminder({
-            ...reminderData,
-            id: rid,
-            notified: false,
-            createdAt: Date.now(),
-          });
-          const orario = `${task.reminderDate} alle ${task.reminderTime}`;
-          patchMsg(msgId, {
-            content: `✅ Task «${task.titolo}» salvata!\n🔔 Reminder impostato per ${orario}`,
-            notionUrl: data.url,
-          });
-        } else {
-          patchMsg(msgId, { content: `✅ Task «${task.titolo}» salvata!`, notionUrl: data.url });
-        }
+      if (!res.ok || !data.success) { patchMsg(msgId, { content: `❌ ${data.error ?? "Errore"}` }); return; }
+      if (notificationsOn && task.reminderDate && task.reminderTime) {
+        const rid = saveReminder({ taskTitle: task.titolo, cliente: task.cliente, reminderAt: `${task.reminderDate}T${task.reminderTime}:00`, notionUrl: data.url ?? "" });
+        await scheduleReminder({ taskTitle: task.titolo, cliente: task.cliente, reminderAt: `${task.reminderDate}T${task.reminderTime}:00`, notionUrl: data.url ?? "", id: rid, notified: false, createdAt: Date.now() });
       }
-    } catch {
-      patchMsg(msgId, { content: "❌ Errore di rete durante il salvataggio." });
-    } finally {
-      setSavingId(null);
-    }
+      patchMsg(msgId, { content: `✓ Task "${task.titolo}" salvata${task.reminderDate && task.reminderTime ? `\n🔔 Reminder ${task.reminderDate} alle ${task.reminderTime}` : ""}`, notionUrl: data.url });
+    } catch { patchMsg(msgId, { content: "❌ Errore di rete." }); }
+    finally { setSavingId(null); }
   };
 
-  // ── Confirm Invoice ────────────────────────────────────────────────────────
   const handleConfirmInvoice = async (msgId: string, invoice: InvoiceData) => {
-    patchMsg(msgId, { pending: undefined, content: "✅ Salvataggio fattura…" });
+    patchMsg(msgId, { pending: undefined, content: "Salvataggio…" });
     setSavingId(msgId);
     try {
-      const res = await fetch("/api/create-invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ invoice }),
-      });
+      const res = await fetch("/api/create-invoice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ invoice }) });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore salvataggio fattura"}` });
-      } else {
-        patchMsg(msgId, { content: `✅ Fattura «${invoice.descrizione}» (€${invoice.importoLordo}) salvata!`, notionUrl: data.url });
-      }
-    } catch {
-      patchMsg(msgId, { content: "❌ Errore di rete durante il salvataggio." });
-    } finally {
-      setSavingId(null);
-    }
+      if (!res.ok || !data.success) { patchMsg(msgId, { content: `❌ ${data.error ?? "Errore"}` }); return; }
+      patchMsg(msgId, { content: `✓ Fattura €${invoice.importoLordo} — ${invoice.cliente || "—"} salvata`, notionUrl: data.url });
+    } catch { patchMsg(msgId, { content: "❌ Errore di rete." }); }
+    finally { setSavingId(null); }
   };
 
-  // ── Confirm Time Log ───────────────────────────────────────────────────────
   const handleConfirmTimeLog = async (msgId: string, timelog: TimeLogData) => {
-    patchMsg(msgId, { pending: undefined, content: "✅ Salvataggio time log…" });
+    patchMsg(msgId, { pending: undefined, content: "Salvataggio…" });
     setSavingId(msgId);
     try {
-      const res = await fetch("/api/create-timelog", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ timelog }),
-      });
+      const res = await fetch("/api/create-timelog", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timelog }) });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore salvataggio time log"}` });
-      } else {
-        const orario = timelog.ora ? ` alle ${timelog.ora}` : "";
-        patchMsg(msgId, {
-          content: `✅ ${timelog.oreLavorate}h su ${timelog.cliente || "—"}${orario} registrate!`,
-          notionUrl: data.url,
-        });
-        if (notificationsOn) {
-          await sendNotification(
-            "⏱ Time Log salvato",
-            `${timelog.oreLavorate}h · ${timelog.cliente || "—"}${orario} · ${timelog.tipoSessione}`
-          );
-        }
-      }
-    } catch {
-      patchMsg(msgId, { content: "❌ Errore di rete durante il salvataggio." });
-    } finally {
-      setSavingId(null);
-    }
+      if (!res.ok || !data.success) { patchMsg(msgId, { content: `❌ ${data.error ?? "Errore"}` }); return; }
+      const orario = timelog.ora ? ` alle ${timelog.ora}` : "";
+      patchMsg(msgId, { content: `✓ ${timelog.oreLavorate}h su ${timelog.cliente || "—"}${orario}`, notionUrl: data.url });
+      if (notificationsOn) await sendNotification("⏱ Time Log", `${timelog.oreLavorate}h · ${timelog.cliente || "—"}${orario}`);
+    } catch { patchMsg(msgId, { content: "❌ Errore di rete." }); }
+    finally { setSavingId(null); }
   };
 
-  // ── Select Task (from multiple results) ────────────────────────────────────
   const handleSelectTask = (msgId: string, task: TaskSearchResult, updates: TaskUpdate) => {
-    patchMsg(msgId, {
-      content: "✏️ Ecco cosa cambierò — conferma:",
-      pending: { type: "confirm_update", task, updates },
-    });
+    patchMsg(msgId, { content: "Task trovata — conferma le modifiche:", pending: { type: "confirm_update", task, updates } });
   };
 
-  // ── Confirm Update ─────────────────────────────────────────────────────────
   const handleConfirmUpdate = async (msgId: string, task: TaskSearchResult, updates: TaskUpdate) => {
-    patchMsg(msgId, { pending: undefined, content: "✅ Aggiornamento in corso…" });
+    patchMsg(msgId, { pending: undefined, content: "Aggiornamento…" });
     setSavingId(msgId);
     try {
-      const res = await fetch("/api/update-task", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId: task.id, updates }),
-      });
+      const res = await fetch("/api/update-task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taskId: task.id, updates }) });
       const data = await res.json();
-      if (!res.ok || !data.success) {
-        patchMsg(msgId, { content: `❌ ${data.error ?? "Errore aggiornamento"}` });
-      } else {
-        patchMsg(msgId, { content: `✅ Task «${task.titolo}» aggiornata!`, notionUrl: data.url });
-      }
-    } catch {
-      patchMsg(msgId, { content: "❌ Errore di rete durante l'aggiornamento." });
-    } finally {
-      setSavingId(null);
-    }
+      if (!res.ok || !data.success) { patchMsg(msgId, { content: `❌ ${data.error ?? "Errore"}` }); return; }
+      patchMsg(msgId, { content: `✓ Task "${task.titolo}" aggiornata`, notionUrl: data.url });
+    } catch { patchMsg(msgId, { content: "❌ Errore di rete." }); }
+    finally { setSavingId(null); }
   };
 
-  // ── Cancel ─────────────────────────────────────────────────────────────────
-  const handleCancel = (msgId: string) => {
-    patchMsg(msgId, { pending: undefined, content: "Operazione annullata." });
-  };
+  const handleCancel = (msgId: string) =>
+    patchMsg(msgId, { pending: undefined, content: "Annullato." });
 
   const handleKeyDown = (ev: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); handleSend(); }
@@ -362,116 +223,135 @@ export default function ChatPage() {
   const hasActivePending = messages.some((m) => m.pending && savingId !== m.id);
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-950 max-w-lg mx-auto">
-      {/* Header */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800 shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
-          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+    <div className="flex h-screen bg-rm-bg overflow-hidden">
+
+      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+      <aside className="hidden md:flex flex-col w-[200px] lg:w-[220px] border-r border-rm-border shrink-0 p-5 overflow-y-auto">
+        {/* Logo */}
+        <div className="mb-6">
+          <svg viewBox="0 0 160 18" width="160" height="18" aria-label="REACHMEDIA.IT">
+            <text x="0" y="16" font-family="system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-weight="900" font-size="16" fill="#FFFFFF" text-anchor="start" letter-spacing="-0.5">REACHMEDIA.IT</text>
           </svg>
+          <p className="text-rm-muted text-[10px] uppercase tracking-[0.15em] mt-1">
+            OS CHAT
+          </p>
         </div>
-        <div>
-          <p className="text-sm font-semibold text-white leading-none">reachmedia OS</p>
-          <p className="text-xs text-zinc-500 mt-0.5">Task · Fatture · Time Log</p>
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          {/* Notifications toggle */}
-          <button
-            onClick={toggleNotifications}
-            title={notificationsOn ? "Notifiche attive — clicca per disattivare" : "Attiva notifiche Time Log"}
-            className={`relative w-9 h-5 rounded-full transition-colors ${notificationsOn ? "bg-indigo-600" : "bg-zinc-700"}`}
-          >
-            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${notificationsOn ? "translate-x-4" : "translate-x-0"}`} />
-          </button>
-          <span className="text-lg leading-none" title={notificationsOn ? "Notifiche attive" : "Notifiche disattivate"}>
-            {notificationsOn ? "🔔" : "🔕"}
-          </span>
-          <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            online
-          </span>
-        </div>
-      </header>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
-        {messages.map((msg) => (
-          <ChatMessage
-            key={msg.id}
-            message={msg}
-            onConfirmTask={
-              msg.pending?.type === "create_task" && savingId !== msg.id
-                ? (d) => handleConfirmTask(msg.id, d) : undefined
-            }
-            onConfirmInvoice={
-              msg.pending?.type === "create_invoice" && savingId !== msg.id
-                ? (d) => handleConfirmInvoice(msg.id, d) : undefined
-            }
-            onConfirmTimeLog={
-              msg.pending?.type === "create_timelog" && savingId !== msg.id
-                ? (d) => handleConfirmTimeLog(msg.id, d) : undefined
-            }
-            onSelectTask={
-              msg.pending?.type === "select_task" && savingId !== msg.id
-                ? (task) => handleSelectTask(msg.id, task, (msg.pending as { type: "select_task"; tasks: TaskSearchResult[]; updates: TaskUpdate }).updates)
-                : undefined
-            }
-            onConfirmUpdate={
-              msg.pending?.type === "confirm_update" && savingId !== msg.id
-                ? (updates) => handleConfirmUpdate(msg.id, (msg.pending as { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate }).task, updates)
-                : undefined
-            }
-            onCancel={msg.pending && savingId !== msg.id ? () => handleCancel(msg.id) : undefined}
-          />
-        ))}
-        <div ref={bottomRef} />
-      </div>
+        <div className="border-t border-rm-border mb-5" />
 
-      {/* Example pills */}
-      {messages.length === 1 && !loading && (
-        <div className="px-4 pb-2 flex flex-wrap gap-2">
+        {/* Examples */}
+        <div className="space-y-1 flex-1">
+          <p className="text-[#444] text-[9px] font-black uppercase tracking-[0.15em] mb-3">ESEMPI</p>
           {EXAMPLES.map((ex) => (
-            <button key={ex} onClick={() => handleSend(ex)}
-              className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-full border border-zinc-700 transition-colors">
-              {ex}
+            <button
+              key={ex.text}
+              onClick={() => handleSend(ex.text)}
+              className="block w-full text-left group py-1.5"
+            >
+              <span className="rm-chip mr-2">{ex.label}</span>
+              <span className="text-rm-muted text-xs group-hover:text-white transition-colors">
+                {ex.text}
+              </span>
             </button>
           ))}
         </div>
-      )}
 
-      {/* Input */}
-      <div className="px-4 py-3 border-t border-zinc-800 shrink-0">
-        <div className={`flex items-end gap-2 bg-zinc-900 border rounded-2xl px-3 py-2 transition-colors ${
-          hasActivePending ? "border-zinc-700 opacity-60" : "border-zinc-700 focus-within:border-indigo-500"
-        }`}>
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            disabled={loading || hasActivePending}
-            placeholder={hasActivePending ? "Conferma o annulla prima di continuare…" : "Task, fattura, ore, aggiorna…"}
-            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 resize-none outline-none leading-5 max-h-[120px] py-0.5 disabled:cursor-not-allowed"
-          />
-          <button onClick={() => handleSend()} disabled={!input.trim() || loading || hasActivePending}
-            className="shrink-0 mb-0.5 w-8 h-8 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-            aria-label="Invia">
-            {loading ? (
-              <svg className="w-4 h-4 text-white animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-              </svg>
-            ) : (
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-              </svg>
-            )}
-          </button>
+        <div className="border-t border-rm-border my-5" />
+
+        {/* Notifications + status */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-rm-muted uppercase tracking-[0.12em] font-semibold">
+              NOTIFICHE
+            </span>
+            <button
+              onClick={toggleNotifications}
+              className="flex items-center gap-2"
+              title={notificationsOn ? "Disattiva" : "Attiva"}
+            >
+              <div className={`relative w-8 h-4 transition-colors ${notificationsOn ? "bg-rm-accent" : "bg-rm-faint"}`}>
+                <span className={`absolute top-0.5 w-3 h-3 bg-black transition-transform ${notificationsOn ? "translate-x-4" : "translate-x-0.5"}`} />
+              </div>
+              <span className={`text-base leading-none ${notificationsOn ? "text-rm-accent" : "text-rm-faint"}`}>
+                {notificationsOn ? "🔔" : "🔕"}
+              </span>
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 bg-rm-accent animate-pulse block" />
+            <span className="text-[10px] text-rm-muted uppercase tracking-[0.12em]">ONLINE</span>
+          </div>
         </div>
-        <p className="text-center text-xs text-zinc-600 mt-2">
-          <kbd className="font-mono">Enter</kbd> invia · <kbd className="font-mono">Shift+Enter</kbd> a capo
-        </p>
+      </aside>
+
+      {/* ── Main area ───────────────────────────────────────────────────── */}
+      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+
+        {/* Mobile header */}
+        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-rm-border shrink-0">
+          <div className="flex items-center gap-2">
+            <svg viewBox="0 0 130 14" width="130" height="14" aria-label="REACHMEDIA.IT">
+              <text x="0" y="12" font-family="system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-weight="900" font-size="13" fill="#FFFFFF" text-anchor="start" letter-spacing="-0.3">REACHMEDIA.IT</text>
+            </svg>
+            <span className="text-rm-muted text-[10px] uppercase tracking-widest hidden xs:inline">OS</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={toggleNotifications}>
+              <span className={`text-base ${notificationsOn ? "text-rm-accent" : "text-rm-faint"}`}>
+                {notificationsOn ? "🔔" : "🔕"}
+              </span>
+            </button>
+            <span className="w-1.5 h-1.5 bg-rm-accent animate-pulse block" />
+          </div>
+        </header>
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-[700px] mx-auto px-4 md:px-6 py-6 space-y-1">
+            {messages.map((msg) => (
+              <ChatMessage
+                key={msg.id}
+                message={msg}
+                onConfirmTask={msg.pending?.type === "create_task" && savingId !== msg.id ? (d) => handleConfirmTask(msg.id, d) : undefined}
+                onConfirmInvoice={msg.pending?.type === "create_invoice" && savingId !== msg.id ? (d) => handleConfirmInvoice(msg.id, d) : undefined}
+                onConfirmTimeLog={msg.pending?.type === "create_timelog" && savingId !== msg.id ? (d) => handleConfirmTimeLog(msg.id, d) : undefined}
+                onSelectTask={msg.pending?.type === "select_task" && savingId !== msg.id ? (task) => handleSelectTask(msg.id, task, (msg.pending as { type: "select_task"; tasks: TaskSearchResult[]; updates: TaskUpdate }).updates) : undefined}
+                onConfirmUpdate={msg.pending?.type === "confirm_update" && savingId !== msg.id ? (updates) => handleConfirmUpdate(msg.id, (msg.pending as { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate }).task, updates) : undefined}
+                onCancel={msg.pending && savingId !== msg.id ? () => handleCancel(msg.id) : undefined}
+              />
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        </div>
+
+        {/* Input */}
+        <div className="border-t border-rm-border shrink-0 px-4 md:px-6 py-4">
+          <div className="max-w-[700px] mx-auto">
+            <div className={`flex items-end gap-3 border-b pb-2 transition-colors ${hasActivePending ? "border-rm-faint opacity-50" : "border-rm-faint focus-within:border-rm-accent"}`}>
+              <textarea
+                ref={inputRef}
+                rows={1}
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                disabled={loading || hasActivePending}
+                placeholder={hasActivePending ? "Conferma o annulla prima di continuare…" : "Scrivi una task, fattura, ore o aggiornamento…"}
+                className="flex-1 bg-transparent text-white text-sm resize-none outline-none leading-5 max-h-[120px] py-0.5 placeholder-rm-faint disabled:cursor-not-allowed"
+              />
+              <button
+                onClick={() => handleSend()}
+                disabled={!input.trim() || loading || hasActivePending}
+                aria-label="Invia"
+                className="shrink-0 mb-0.5 bg-rm-accent text-black font-black text-xs uppercase px-3 py-1.5 hover:bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {loading ? "…" : "INVIA"}
+              </button>
+            </div>
+            <p className="text-rm-faint text-[10px] uppercase tracking-[0.12em] mt-2">
+              ENTER invia · SHIFT+ENTER a capo
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

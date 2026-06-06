@@ -9,46 +9,41 @@ interface Props {
   onCancel: () => void;
 }
 
-const updateLabels: Record<string, string> = {
-  stato: "Stato", priorita: "Priorità", bloccatoDa: "Bloccato da",
-  approvazioneCliente: "Approvazione", tempoReale: "Ore reali",
-  deadline: "Deadline", note: "Note",
-};
-
 export default function TaskSelectCard({ tasks, updates, onSelect, onCancel }: Props) {
   const summary = Object.entries(updates)
     .filter(([, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => `${updateLabels[k] ?? k}: ${v}`)
+    .map(([k, v]) => `${k}: ${v}`)
     .join(" · ");
 
   return (
-    <div className="bg-zinc-800 border border-blue-700/50 rounded-2xl p-4 space-y-3 max-w-sm w-full">
-      <p className="text-xs text-blue-400 uppercase tracking-widest font-semibold">🔍 Quale task aggiornare?</p>
+    <div className="bg-rm-surface border border-rm-border w-full max-w-[480px]">
+      <div className="border-b border-rm-border px-4 py-3">
+        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-rm-muted">QUALE TASK AGGIORNARE?</span>
+      </div>
 
-      <div className="space-y-2">
+      <div className="divide-y divide-rm-border">
         {tasks.map((task) => (
           <button key={task.id} onClick={() => onSelect(task)}
-            className="w-full text-left bg-zinc-900 hover:bg-zinc-700/80 border border-zinc-700 hover:border-zinc-500 rounded-xl p-3 transition-all">
-            <p className="text-sm text-white font-medium truncate">{task.titolo}</p>
-            <div className="flex gap-2 mt-1 flex-wrap items-center">
-              {task.cliente && <span className="text-xs text-zinc-400">{task.cliente}</span>}
-              {task.stato && <span className="text-xs text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">{task.stato}</span>}
-              {task.priorita && <span className="text-xs text-zinc-500">{task.priorita}</span>}
-              {task.deadline && <span className="text-xs text-zinc-600">{task.deadline}</span>}
+            className="w-full text-left px-4 py-3 hover:bg-rm-surface2 transition-colors group">
+            <p className="text-white text-sm font-semibold group-hover:text-rm-accent transition-colors truncate">{task.titolo}</p>
+            <div className="flex gap-3 mt-1">
+              {task.cliente && <span className="text-rm-muted text-[10px] uppercase tracking-wide">{task.cliente}</span>}
+              {task.stato && <span className="text-[10px] text-rm-faint uppercase">{task.stato}</span>}
+              {task.deadline && <span className="text-[10px] text-rm-faint">{task.deadline}</span>}
             </div>
           </button>
         ))}
       </div>
 
       {summary && (
-        <p className="text-xs text-zinc-500 bg-zinc-900/50 rounded-lg px-3 py-2">
-          Applicherà: {summary}
-        </p>
+        <div className="border-t border-rm-border px-4 py-2">
+          <p className="text-[10px] text-rm-muted uppercase tracking-wide">Applicherà: {summary}</p>
+        </div>
       )}
 
-      <button onClick={onCancel} className="w-full py-2 rounded-xl text-sm text-zinc-400 border border-zinc-700 hover:border-zinc-500 transition-colors">
-        Annulla
-      </button>
+      <div className="border-t border-rm-border">
+        <button onClick={onCancel} className="w-full py-3 text-xs text-rm-muted uppercase tracking-[0.12em] font-semibold hover:text-white transition-colors">ANNULLA</button>
+      </div>
     </div>
   );
 }

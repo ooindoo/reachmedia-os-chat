@@ -22,26 +22,22 @@ interface Props {
 }
 
 export default function ChatMessage({
-  message,
-  onConfirmTask,
-  onConfirmInvoice,
-  onConfirmTimeLog,
-  onSelectTask,
-  onConfirmUpdate,
-  onCancel,
+  message, onConfirmTask, onConfirmInvoice, onConfirmTimeLog,
+  onSelectTask, onConfirmUpdate, onCancel,
 }: Props) {
   const isUser = message.role === "user";
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-3`}>
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-2`}>
       {isUser ? (
-        <div className="bg-indigo-600 text-white text-sm px-4 py-2.5 rounded-2xl rounded-br-sm max-w-xs break-words">
+        // User bubble — lime accent, black text, zero radius
+        <div className="bg-rm-accent text-black font-bold text-sm px-4 py-2.5 max-w-[80%] break-words whitespace-pre-wrap">
           {message.content}
         </div>
       ) : (
-        <div className="flex flex-col gap-2 max-w-xs">
+        <div className="flex flex-col gap-2 max-w-full w-full">
           {message.content && (
-            <div className="bg-zinc-800 text-zinc-100 text-sm px-4 py-2.5 rounded-2xl rounded-bl-sm break-words whitespace-pre-wrap">
+            <div className="bg-rm-surface text-white text-sm px-4 py-2.5 max-w-[80%] break-words whitespace-pre-wrap">
               {message.content}
             </div>
           )}
@@ -64,8 +60,8 @@ export default function ChatMessage({
 
           {message.notionUrl && (
             <a href={message.notionUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 underline underline-offset-2">
-              <span>↗</span> Apri su Notion
+              className="inline-flex items-center gap-2 text-[10px] text-rm-muted hover:text-rm-accent uppercase tracking-[0.12em] transition-colors">
+              <span className="text-rm-accent">↗</span> APRI SU NOTION
             </a>
           )}
         </div>
