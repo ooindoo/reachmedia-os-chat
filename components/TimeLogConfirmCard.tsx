@@ -41,10 +41,21 @@ export default function TimeLogConfirmCard({ timelog, onConfirm, onCancel }: Pro
         </div>
       </div>
 
-      <div>
-        <label className="text-xs text-zinc-400 mb-1 block">Data</label>
-        <input type="date" className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-emerald-500 outline-none"
-          value={e.data} onChange={(ev) => set("data", ev.target.value)} />
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Data</label>
+          <input type="date" className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-emerald-500 outline-none"
+            value={e.data} onChange={(ev) => set("data", ev.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Ora inizio</label>
+          <input type="time"
+            className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-emerald-500 outline-none"
+            value={e.ora}
+            onChange={(ev) => set("ora", ev.target.value)}
+            placeholder="—"
+          />
+        </div>
       </div>
 
       <div>

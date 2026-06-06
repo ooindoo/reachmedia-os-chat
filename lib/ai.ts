@@ -102,6 +102,7 @@ create_timelog → {
     "cliente":"nome esatto o ''",
     "oreLavorate":2.5,
     "data":"YYYY-MM-DD",
+    "ora":"HH:MM o '' se non specificata",
     "tipoSessione":"${TIPI_SESSIONE.join("|")}",
     "energia":"${ENERGIE.join("|")}",
     "fatturabile":"${FATTURABILE_OPTS.join("|")}"
@@ -134,7 +135,7 @@ update_task → {
 - "fix/bug" → 🐛 Fix / Bug
 - invoice: "pagata bonifico" → statoPagamento:"Pagata", metodoPagamento:"🏦 Bonifico"
 - invoice: mese dal testo o corrente; anno dal testo o corrente; scadenza = emissione+30gg se non specificata
-- timelog: ore come decimale (es. 3h30m→3.5); "oggi" → data odierna; default fatturabile "✅ Sì"
+- timelog: ore come decimale (es. 3h30m→3.5); "oggi" → data odierna; default fatturabile "✅ Sì"; "alle 14" o "14:30" → ora in formato HH:MM, altrimenti ''
 - update_task: negli updates includi SOLO i campi da modificare, ometti il resto
 - Usa valori ESATTI con emoji dalle liste`;
 
@@ -210,6 +211,7 @@ update_task → {
         cliente: parsed.data.cliente || "",
         oreLavorate: Number(parsed.data.oreLavorate) || 1,
         data: parsed.data.data || todayDate,
+        ora: typeof parsed.data.ora === "string" ? parsed.data.ora : "",
         tipoSessione: (TIPI_SESSIONE as readonly string[]).includes(parsed.data.tipoSessione)
           ? (parsed.data.tipoSessione as TipoSessione) : "💻 Sviluppo",
         energia: (ENERGIE as readonly string[]).includes(parsed.data.energia)

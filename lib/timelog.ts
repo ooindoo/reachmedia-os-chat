@@ -9,7 +9,8 @@ export interface TimeLogData {
   descrizione: string;
   cliente: string;
   oreLavorate: number;
-  data: string;         // YYYY-MM-DD
+  data: string;   // YYYY-MM-DD
+  ora: string;    // HH:MM — se non vuoto salva come datetime
   tipoSessione: TipoSessione;
   energia: Energia;
   fatturabile: Fatturabile;
@@ -19,13 +20,18 @@ export async function createNotionTimeLog(timelog: TimeLogData): Promise<AnyPage
   const notion = new Client({ auth: process.env.NOTION_TOKEN });
   const clientInfo = CLIENTS[timelog.cliente];
 
+  // Build date value: datetime if ora is set, else date-only
+  const dateStart = timelog.ora
+    ? `${timelog.data}T${timelog.ora}:00.000+01:00`
+    : timelog.data;
+
   return notion.pages.create({
     parent: { database_id: process.env.NOTION_TIMELOG_DB! },
     properties: {
       "Descrizione sessione": { title: [{ text: { content: timelog.descrizione } }] },
       Cliente: { relation: clientInfo ? [{ id: clientInfo.id }] : [] },
       "Ore lavorate": { number: timelog.oreLavorate },
-      Data: { date: { start: timelog.data } },
+      Data: { date: { start: dateStart } },
       "Tipo sessione": { select: { name: timelog.tipoSessione } },
       Energia: { select: { name: timelog.energia } },
       Fatturabile: { select: { name: timelog.fatturabile } },

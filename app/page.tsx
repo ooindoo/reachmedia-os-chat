@@ -23,6 +23,17 @@ export interface Message {
   notionUrl?: string;
 }
 
+// ── Notification helper ────────────────────────────────────────────────────────
+async function sendNotification(title: string, body: string) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission === "default") {
+    await Notification.requestPermission();
+  }
+  if (Notification.permission === "granted") {
+    new Notification(title, { body, icon: "/favicon.ico", badge: "/favicon.ico" });
+  }
+}
+
 // ── Examples ───────────────────────────────────────────────────────────────────
 const EXAMPLES = [
   "chiama Squale entro venerdì",
@@ -41,14 +52,38 @@ export default function ChatPage() {
       id: "welcome",
       role: "assistant",
       content:
-        "Ciao! 👋 Dimmi cosa devo fare:\n• Task: «chiama Squale venerdì»\n• Fattura: «fattura CappellettoShop 1500€ giugno»\n• Ore: «ho lavorato 2h su NOESI oggi»\n• Aggiorna: «segna come fatto la newsletter Markershop»",
+        "Ciao! 👋 Dimmi cosa devo fare:\n• Task: «chiama Squale venerdì»\n• Fattura: «fattura CappellettoShop 1500€ giugno»\n• Ore: «ho lavorato 2h su NOESI oggi alle 14»\n• Aggiorna: «segna come fatto la newsletter Markershop»",
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [notificationsOn, setNotificationsOn] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load notification pref from localStorage
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("rm-notifications");
+      if (saved === "true") setNotificationsOn(true);
+    } catch { /* noop */ }
+  }, []);
+
+  const toggleNotifications = async () => {
+    if (!notificationsOn) {
+      // Request permission first
+      if (typeof window !== "undefined" && "Notification" in window) {
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") return; // User denied
+      }
+      setNotificationsOn(true);
+      localStorage.setItem("rm-notifications", "true");
+    } else {
+      setNotificationsOn(false);
+      localStorage.setItem("rm-notifications", "false");
+    }
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -210,7 +245,17 @@ export default function ChatPage() {
       if (!res.ok || !data.success) {
         patchMsg(msgId, { content: `❌ ${data.error ?? "Errore salvataggio time log"}` });
       } else {
-        patchMsg(msgId, { content: `✅ ${timelog.oreLavorate}h su ${timelog.cliente || "—"} registrate!`, notionUrl: data.url });
+        const orario = timelog.ora ? ` alle ${timelog.ora}` : "";
+        patchMsg(msgId, {
+          content: `✅ ${timelog.oreLavorate}h su ${timelog.cliente || "—"}${orario} registrate!`,
+          notionUrl: data.url,
+        });
+        if (notificationsOn) {
+          await sendNotification(
+            "⏱ Time Log salvato",
+            `${timelog.oreLavorate}h · ${timelog.cliente || "—"}${orario} · ${timelog.tipoSessione}`
+          );
+        }
       }
     } catch {
       patchMsg(msgId, { content: "❌ Errore di rete durante il salvataggio." });
@@ -274,10 +319,23 @@ export default function ChatPage() {
           <p className="text-sm font-semibold text-white leading-none">reachmedia OS</p>
           <p className="text-xs text-zinc-500 mt-0.5">Task · Fatture · Time Log</p>
         </div>
-        <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          online
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {/* Notifications toggle */}
+          <button
+            onClick={toggleNotifications}
+            title={notificationsOn ? "Notifiche attive — clicca per disattivare" : "Attiva notifiche Time Log"}
+            className={`relative w-9 h-5 rounded-full transition-colors ${notificationsOn ? "bg-indigo-600" : "bg-zinc-700"}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${notificationsOn ? "translate-x-4" : "translate-x-0"}`} />
+          </button>
+          <span className="text-lg leading-none" title={notificationsOn ? "Notifiche attive" : "Notifiche disattivate"}>
+            {notificationsOn ? "🔔" : "🔕"}
+          </span>
+          <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            online
+          </span>
+        </div>
       </header>
 
       {/* Messages */}
