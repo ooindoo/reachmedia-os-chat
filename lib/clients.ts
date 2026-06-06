@@ -1,14 +1,15 @@
+// IDs verified directly from the Clienti database via API query
 export const CLIENTS: Record<string, { id: string; name: string }> = {
-  "Squale SA": { id: "3776285ec2068107a081e2158cfbe199", name: "Squale SA" },
-  CappellettoShop: { id: "3776285ec2068153ae00f1dc2885fee0", name: "CappellettoShop" },
-  Luxyt: { id: "3776285ec2068120bc01e1f6adad5c96", name: "Luxyt" },
-  NOESI: { id: "3776285ec20681cb9f36ce19ef90a21d", name: "NOESI" },
-  Opplant: { id: "3776285ec20681019c9ac2406b5564cb", name: "Opplant" },
-  Markershop: { id: "3776285ec206816c867cca789001887f", name: "Markershop" },
-  "Shirò Pagani Boutique": { id: "3776285ec20681aabaa0e7122a339b06", name: "Shirò Pagani Boutique" },
-  Sicura: { id: "3776285ec2068100a82ac929b31aee2b", name: "Sicura" },
-  "Stewart Dawson": { id: "3776285ec20681809ebfe1071b278795", name: "Stewart Dawson" },
-  "Giuseppe Toniolo Airbnb": { id: "3776285ec20681e3bb7fda9dc29532d2", name: "Giuseppe Toniolo Airbnb" },
+  "Squale SA":             { id: "3776285ec206818fb9a4e609acbab5da", name: "Squale SA" },
+  CappellettoShop:         { id: "3776285ec20681c38b88edd95edfc507", name: "CappellettoShop" },
+  Luxyt:                   { id: "3776285ec206812e8ad5f11765f9f61f", name: "Luxyt" },
+  NOESI:                   { id: "3776285ec206819c8ae7f482c9b30890", name: "NOESI" },
+  Opplant:                 { id: "3776285ec20681e5ad16faba1dcefd73", name: "Opplant" },
+  Markershop:              { id: "3776285ec20681109437eedaa97b8908", name: "Markershop" },
+  "Shirò Pagani Boutique": { id: "3776285ec20681779a0df45152a99c85", name: "Shirò Pagani Boutique" },
+  Sicura:                  { id: "3776285ec206811b9162fbd44e644372", name: "Sicura" },
+  "Stewart Dawson":        { id: "3776285ec20681fe9105c359f47889f6", name: "Stewart Dawson" },
+  "Giuseppe Toniolo Airbnb": { id: "3776285ec20681a7ade2f3adc44ff5ee", name: "Giuseppe Toniolo Airbnb" },
 };
 export const CLIENT_NAMES = Object.keys(CLIENTS);
 
