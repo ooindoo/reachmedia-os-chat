@@ -1,101 +1,345 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState, useRef, useEffect, useCallback } from "react";
+import ChatMessage from "@/components/ChatMessage";
+import type { TaskData } from "@/lib/notion";
+
+export interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  taskData?: TaskData;
+  awaitingConfirm?: boolean;
+  notionUrl?: string;
+}
+
+const EXAMPLES = [
+  "chiama Squale entro venerdì",
+  "prepara newsletter CappellettoShop per lunedì",
+  "fix bug Opplant urgente",
+  "report analytics NOESI per giovedì",
+];
+
+export default function ChatPage() {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      content:
+        "Ciao! 👋 Dimmi cosa devo aggiungere in Notion — es. \"chiama Squale entro venerdì\" o \"newsletter CappellettoShop per lunedì\".",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Auto-resize textarea
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    e.target.style.height = "auto";
+    e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+  };
+
+  const addMessage = (msg: Omit<Message, "id">) => {
+    const id = crypto.randomUUID();
+    setMessages((prev) => [...prev, { ...msg, id }]);
+    return id;
+  };
+
+  const handleSend = useCallback(
+    async (text?: string) => {
+      const userText = (text ?? input).trim();
+      if (!userText || loading) return;
+
+      setInput("");
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+      }
+
+      // Add user message
+      addMessage({ role: "user", content: userText });
+      setLoading(true);
+
+      // Add typing indicator
+      const thinkingId = crypto.randomUUID();
+      setMessages((prev) => [
+        ...prev,
+        { id: thinkingId, role: "assistant", content: "⏳ Sto analizzando…" },
+      ]);
+
+      try {
+        const res = await fetch("/api/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: userText }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.task) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === thinkingId
+                ? {
+                    ...m,
+                    content:
+                      data.error ??
+                      "Non sono riuscito a interpretare il messaggio. Riprova.",
+                  }
+                : m
+            )
+          );
+          return;
+        }
+
+        const task: TaskData = data.task;
+
+        // Replace thinking indicator with confirmation card
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === thinkingId
+              ? {
+                  ...m,
+                  content: "Ho estratto questi dettagli — modificali se serve:",
+                  taskData: task,
+                  awaitingConfirm: true,
+                }
+              : m
+          )
+        );
+      } catch {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === thinkingId
+              ? { ...m, content: "Errore di rete. Controlla la connessione e riprova." }
+              : m
+          )
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [input, loading]
+  );
+
+  const handleConfirm = async (msgId: string, task: TaskData) => {
+    // Dismiss the confirm card immediately
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId ? { ...m, awaitingConfirm: false, content: "✅ Salvataggio…" } : m
+      )
+    );
+    setSavingId(msgId);
+
+    try {
+      const res = await fetch("/api/create-task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ task }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId
+              ? {
+                  ...m,
+                  content:
+                    data.error ?? "Errore nel salvataggio su Notion. Riprova.",
+                }
+              : m
+          )
+        );
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId
+            ? {
+                ...m,
+                content: `✅ Task "${task.titolo}" salvata su Notion!`,
+                notionUrl: data.url,
+              }
+            : m
+        )
+      );
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msgId
+            ? { ...m, content: "Errore di rete durante il salvataggio. Riprova." }
+            : m
+        )
+      );
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleCancel = (msgId: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId
+          ? { ...m, awaitingConfirm: false, taskData: undefined, content: "Operazione annullata." }
+          : m
+      )
+    );
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const hasActiveConfirm = messages.some((m) => m.awaitingConfirm);
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="flex flex-col h-screen bg-zinc-950 max-w-lg mx-auto">
+      {/* Header */}
+      <header className="flex items-center gap-3 px-4 py-3 border-b border-zinc-800 shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center shrink-0">
+          <svg
+            className="w-4 h-4 text-white"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2.5}
           >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+          </svg>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+        <div>
+          <p className="text-sm font-semibold text-white leading-none">reachmedia OS</p>
+          <p className="text-xs text-zinc-500 mt-0.5">Crea task Notion</p>
+        </div>
+        <span className="ml-auto flex items-center gap-1.5 text-xs text-emerald-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          online
+        </span>
+      </header>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-2">
+        {messages.map((msg) => (
+          <ChatMessage
+            key={msg.id}
+            message={msg}
+            onConfirm={
+              msg.awaitingConfirm && savingId !== msg.id
+                ? (task) => handleConfirm(msg.id, task)
+                : undefined
+            }
+            onCancel={
+              msg.awaitingConfirm && savingId !== msg.id
+                ? () => handleCancel(msg.id)
+                : undefined
+            }
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Example pills — shown only when idle */}
+      {messages.length === 1 && !loading && (
+        <div className="px-4 pb-2 flex flex-wrap gap-2">
+          {EXAMPLES.map((ex) => (
+            <button
+              key={ex}
+              onClick={() => handleSend(ex)}
+              className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-full border border-zinc-700 transition-colors"
+            >
+              {ex}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Input area */}
+      <div className="px-4 py-3 border-t border-zinc-800 shrink-0">
+        <div
+          className={`flex items-end gap-2 bg-zinc-900 border rounded-2xl px-3 py-2 transition-colors ${
+            hasActiveConfirm
+              ? "border-zinc-700 opacity-60"
+              : "border-zinc-700 focus-within:border-indigo-500"
+          }`}
         >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={input}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            disabled={loading || hasActiveConfirm}
+            placeholder={
+              hasActiveConfirm
+                ? "Conferma o annulla la task sopra…"
+                : "Scrivi una task in italiano…"
+            }
+            className="flex-1 bg-transparent text-sm text-white placeholder-zinc-500 resize-none outline-none leading-5 max-h-[120px] py-0.5 disabled:cursor-not-allowed"
           />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          <button
+            onClick={() => handleSend()}
+            disabled={!input.trim() || loading || hasActiveConfirm}
+            className="shrink-0 mb-0.5 w-8 h-8 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            aria-label="Invia"
+          >
+            {loading ? (
+              <svg
+                className="w-4 h-4 text-white animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8v8H4z"
+                />
+              </svg>
+            ) : (
+              <svg
+                className="w-4 h-4 text-white"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5"
+                />
+              </svg>
+            )}
+          </button>
+        </div>
+        <p className="text-center text-xs text-zinc-600 mt-2">
+          Invio con <kbd className="font-mono">Enter</kbd> · a capo con{" "}
+          <kbd className="font-mono">Shift+Enter</kbd>
+        </p>
+      </div>
     </div>
   );
 }
