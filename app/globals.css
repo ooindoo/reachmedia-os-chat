@@ -9,7 +9,7 @@ html, body { height: 100%; overflow: hidden; margin: 0; padding: 0; }
 body {
   background: #000000;
   color: #FFFFFF;
-  font-family: system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--font-inter), system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

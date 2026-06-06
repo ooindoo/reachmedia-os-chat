@@ -32,10 +32,11 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ["var(--font-geist-sans)", "system-ui", "-apple-system", "sans-serif"],
+        sans:    ["var(--font-inter)", "system-ui", "sans-serif"],
+        display: ["var(--font-bebas)", "Impact", "sans-serif"],
       },
       letterSpacing: {
-        display: "-0.03em",
+        display: "-0.02em",
       },
     },
   },

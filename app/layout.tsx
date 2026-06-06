@@ -2,10 +2,18 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
+const inter = localFont({
+  src: "./fonts/inter.woff2",
+  variable: "--font-inter",
   weight: "100 900",
+  display: "swap",
+});
+
+const bebas = localFont({
+  src: "./fonts/bebas-neue.woff2",
+  variable: "--font-bebas",
+  weight: "400",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -34,7 +42,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="it">
-      <body className={`${geistSans.variable} font-sans`}>
+      <body className={`${inter.variable} ${bebas.variable} font-sans`}>
         {children}
       </body>
     </html>
