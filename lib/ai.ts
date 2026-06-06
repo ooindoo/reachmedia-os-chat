@@ -55,9 +55,17 @@ Regole:
 - "entro venerdì" → calcola il prossimo venerdì dalla data odierna
 - "per lunedì" → calcola il prossimo lunedì
 - "urgente" → priorità 🔴 Urgente
-- "chiama" o "call" → tipo Call/Meeting
-- "newsletter" → tipo Newsletter
-- "fix" o "bug" → tipo Fix/Bug
+- "chiama" o "call" → tipo "📞 Call / Meeting"
+- "newsletter" → tipo "📧 Newsletter"
+- "fix" o "bug" → tipo "🐛 Fix / Bug"
+- "flow" o "automation" → tipo "🔄 Flow / Automation"
+- "shopify" o "dev" → tipo "🛍 Shopify Dev"
+- "report" o "analytics" → tipo "📊 Report / Analytics"
+- "copy" o "content" → tipo "✍️ Copy / Content"
+- "setup" o "configurazione" → tipo "🔧 Setup / Configurazione"
+- "social" o "meta" o "ads" → tipo "📱 Social / Meta"
+- "airbnb" o "messaggistica" → tipo "📬 Airbnb Messaggistica"
+- IMPORTANTE: usa i valori ESATTI dalla lista tipi (con emoji incluse)
 - Se il cliente non è nella lista, usa la stringa più simile o vuota
 - Il titolo deve essere conciso e in italiano`;
 
@@ -93,6 +101,6 @@ Regole:
       : "🟡 Media",
     tipoAttivita: (TIPI_ATTIVITA as readonly string[]).includes(parsed.tipoAttivita)
       ? (parsed.tipoAttivita as TipoAttivita)
-      : "Copy/Content",
+      : "✍️ Copy / Content",
   };
 }

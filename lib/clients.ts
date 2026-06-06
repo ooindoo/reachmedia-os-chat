@@ -43,17 +43,18 @@ export const CLIENTS: Record<string, { id: string; name: string }> = {
 
 export const CLIENT_NAMES = Object.keys(CLIENTS);
 
+// Values must match EXACTLY what's in the Notion database (with emoji prefix)
 export const TIPI_ATTIVITA = [
-  "Newsletter",
-  "Flow/Automation",
-  "Shopify Dev",
-  "Call/Meeting",
-  "Report/Analytics",
-  "Copy/Content",
-  "Setup/Configurazione",
-  "Fix/Bug",
-  "Social/Meta",
-  "Airbnb Messaggistica",
+  "📧 Newsletter",
+  "🔄 Flow / Automation",
+  "🛍 Shopify Dev",
+  "📞 Call / Meeting",
+  "📊 Report / Analytics",
+  "✍️ Copy / Content",
+  "🔧 Setup / Configurazione",
+  "🐛 Fix / Bug",
+  "📱 Social / Meta",
+  "📬 Airbnb Messaggistica",
 ] as const;
 
 export type TipoAttivita = (typeof TIPI_ATTIVITA)[number];
