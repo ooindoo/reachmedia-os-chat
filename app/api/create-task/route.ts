@@ -11,10 +11,22 @@ export async function POST(req: NextRequest) {
     const page = await createNotionTask(task);
     const url = (page as { url?: string }).url ?? null;
     return NextResponse.json({ success: true, url, id: page.id });
-  } catch (err) {
-    console.error("Create task error:", err);
+  } catch (err: unknown) {
+    // Surface the real Notion error message for debugging
+    let message = "Errore nella creazione della task su Notion";
+    let details: unknown = null;
+
+    if (err && typeof err === "object") {
+      const e = err as Record<string, unknown>;
+      // Notion SDK wraps errors with .message and sometimes .body
+      if (typeof e.message === "string") message = e.message;
+      if (e.body) details = e.body;
+      else if (e.code) details = e.code;
+    }
+
+    console.error("Create task error:", message, details ?? "");
     return NextResponse.json(
-      { error: "Errore nella creazione della task su Notion" },
+      { error: message, details },
       { status: 500 }
     );
   }

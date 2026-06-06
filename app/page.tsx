@@ -147,15 +147,15 @@ export default function ChatPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
+        const errMsg = [
+          data.error ?? "Errore nel salvataggio su Notion.",
+          data.details ? `\nDettaglio: ${JSON.stringify(data.details)}` : "",
+        ]
+          .join("")
+          .trim();
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === msgId
-              ? {
-                  ...m,
-                  content:
-                    data.error ?? "Errore nel salvataggio su Notion. Riprova.",
-                }
-              : m
+            m.id === msgId ? { ...m, content: `❌ ${errMsg}` } : m
           )
         );
         return;
