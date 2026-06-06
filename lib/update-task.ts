@@ -4,6 +4,8 @@ import { CLIENTS } from "./clients";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyPage = Record<string, any>;
 
+const NOTION_VERSION = "2022-06-28";
+
 export interface TaskSearchResult {
   id: string;
   titolo: string;
@@ -24,46 +26,67 @@ export interface TaskUpdate {
   note?: string;
 }
 
+// Use raw fetch because @notionhq/client v5 removed databases.query
+async function queryDatabase(
+  dbId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  filter: Record<string, any>
+): Promise<AnyPage[]> {
+  const res = await fetch(`https://api.notion.com/v1/databases/${dbId}/query`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.NOTION_TOKEN}`,
+      "Content-Type": "application/json",
+      "Notion-Version": NOTION_VERSION,
+    },
+    body: JSON.stringify({ filter, page_size: 5 }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error((err as AnyPage).message ?? "Notion query failed");
+  }
+
+  const data = await res.json() as AnyPage;
+  return data.results as AnyPage[];
+}
+
 export async function searchTasks(
   query: string,
   clienteName?: string
 ): Promise<TaskSearchResult[]> {
-  const notion = new Client({ auth: process.env.NOTION_TOKEN });
   const dbId = process.env.NOTION_TASK_DB!;
-
   const titleFilter = { property: "Task", title: { contains: query } };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let filter: any = titleFilter;
+  let filter: Record<string, any> = titleFilter;
   if (clienteName) {
     const clientInfo = CLIENTS[clienteName];
     if (clientInfo) {
-      filter = { and: [titleFilter, { property: "Cliente", relation: { contains: clientInfo.id } }] };
+      filter = {
+        and: [
+          titleFilter,
+          { property: "Cliente", relation: { contains: clientInfo.id } },
+        ],
+      };
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const response = await (notion as any).databases.query({
-    database_id: dbId,
-    filter,
-    page_size: 5,
-  });
+  const results = await queryDatabase(dbId, filter);
 
-  return (response.results as AnyPage[]).map((page) => {
-    const p = page as AnyPage;
-    const props = p.properties as Record<string, AnyPage>;
+  return results.map((page) => {
+    const props = page.properties as Record<string, AnyPage>;
 
-    const titolo = (props.Task?.title?.[0]?.plain_text as string) || "";
-    const stato = (props.Stato?.status?.name as string) || "";
+    const titolo   = (props.Task?.title?.[0]?.plain_text as string) || "";
+    const stato    = (props.Stato?.status?.name as string) || "";
     const priorita = (props["Priorità"]?.select?.name as string) || "";
     const deadline = (props.Deadline?.date?.start as string) || "";
 
-    // Resolve client name from relation ID
     const clienteId = ((props.Cliente?.relation?.[0]?.id as string) || "").replace(/-/g, "");
     const clienteEntry = Object.values(CLIENTS).find((c) => c.id === clienteId);
     const cliente = clienteEntry?.name || "";
 
-    return { id: p.id as string, titolo, cliente, stato, priorita, deadline, url: p.url as string };
+    return { id: page.id as string, titolo, cliente, stato, priorita, deadline, url: page.url as string };
   });
 }
 
