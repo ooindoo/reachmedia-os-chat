@@ -6,6 +6,8 @@ import type { TaskData } from "@/lib/notion";
 import type { InvoiceData } from "@/lib/invoice";
 import type { TimeLogData } from "@/lib/timelog";
 import type { TaskSearchResult, TaskUpdate } from "@/lib/update-task";
+import { saveReminder, scheduleReminder, bootstrapReminders, markNotified } from "@/lib/reminders";
+import type { Reminder } from "@/lib/reminders";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 export type PendingAction =
@@ -62,12 +64,25 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load notification pref from localStorage
+  // Load notification pref + register SW + bootstrap reminders
   useEffect(() => {
     try {
       const saved = localStorage.getItem("rm-notifications");
       if (saved === "true") setNotificationsOn(true);
     } catch { /* noop */ }
+
+    // Register service worker (enables Notification Triggers API on Chrome/Android)
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+
+    // Reschedule any pending reminders from previous sessions
+    if (Notification.permission === "granted") {
+      bootstrapReminders((r: Reminder) => {
+        markNotified(r.id);
+        sendNotification("📋 Reminder task", `${r.taskTitle}${r.cliente ? " · " + r.cliente : ""}`);
+      });
+    }
   }, []);
 
   const toggleNotifications = async () => {
@@ -199,7 +214,31 @@ export default function ChatPage() {
       if (!res.ok || !data.success) {
         patchMsg(msgId, { content: `❌ ${data.error ?? "Errore salvataggio task"}` });
       } else {
-        patchMsg(msgId, { content: `✅ Task «${task.titolo}» salvata!`, notionUrl: data.url });
+        // Schedule reminder if set
+        if (notificationsOn && task.reminderDate && task.reminderTime) {
+          const reminderAt = `${task.reminderDate}T${task.reminderTime}:00`;
+          const reminder = {
+            taskTitle: task.titolo,
+            cliente: task.cliente,
+            reminderAt,
+            notionUrl: data.url ?? "",
+          };
+          const rid = saveReminder(reminder);
+          await scheduleReminder(
+            { ...reminder, id: rid, notified: false, createdAt: Date.now() },
+            (r: Reminder) => {
+              markNotified(r.id);
+              sendNotification("📋 Reminder task", `${r.taskTitle}${r.cliente ? " · " + r.cliente : ""}`);
+            }
+          );
+          const orario = `${task.reminderDate} alle ${task.reminderTime}`;
+          patchMsg(msgId, {
+            content: `✅ Task «${task.titolo}» salvata!\n🔔 Reminder impostato per ${orario}`,
+            notionUrl: data.url,
+          });
+        } else {
+          patchMsg(msgId, { content: `✅ Task «${task.titolo}» salvata!`, notionUrl: data.url });
+        }
       }
     } catch {
       patchMsg(msgId, { content: "❌ Errore di rete durante il salvataggio." });

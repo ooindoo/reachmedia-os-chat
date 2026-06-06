@@ -11,10 +11,30 @@ interface Props {
 }
 
 export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
-  const [edited, setEdited] = useState<TaskData>({ ...task });
+  const [edited, setEdited] = useState<TaskData>({
+    ...task,
+    reminderDate: task.reminderDate ?? "",
+    reminderTime: task.reminderTime ?? "",
+  });
+  const [reminderOn, setReminderOn] = useState(false);
 
   const set = <K extends keyof TaskData>(key: K, value: TaskData[K]) =>
     setEdited((prev) => ({ ...prev, [key]: value }));
+
+  const toggleReminder = () => {
+    const next = !reminderOn;
+    setReminderOn(next);
+    if (!next) {
+      setEdited((p) => ({ ...p, reminderDate: "", reminderTime: "" }));
+    } else {
+      // Pre-fill with deadline date and 09:00
+      setEdited((p) => ({
+        ...p,
+        reminderDate: p.reminderDate || p.deadline,
+        reminderTime: p.reminderTime || "09:00",
+      }));
+    }
+  };
 
   return (
     <div className="bg-zinc-800 border border-zinc-700 rounded-2xl p-4 space-y-3 max-w-sm w-full">
@@ -41,11 +61,7 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
           onChange={(e) => set("cliente", e.target.value)}
         >
           <option value="">— Nessun cliente —</option>
-          {CLIENT_NAMES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
+          {CLIENT_NAMES.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
 
@@ -68,11 +84,7 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
           value={edited.tipoAttivita}
           onChange={(e) => set("tipoAttivita", e.target.value as TaskData["tipoAttivita"])}
         >
-          {TIPI_ATTIVITA.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
+          {TIPI_ATTIVITA.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
 
@@ -94,6 +106,47 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* ── Reminder ─────────────────────────────────────────────────────── */}
+      <div className="border-t border-zinc-700/50 pt-3">
+        {/* Toggle row */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-base">{reminderOn ? "🔔" : "🔕"}</span>
+            <span className="text-xs text-zinc-300 font-medium">Reminder notifica</span>
+          </div>
+          <button
+            onClick={toggleReminder}
+            className={`relative w-9 h-5 rounded-full transition-colors ${reminderOn ? "bg-indigo-600" : "bg-zinc-600"}`}
+          >
+            <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${reminderOn ? "translate-x-4" : "translate-x-0"}`} />
+          </button>
+        </div>
+
+        {/* Date + time pickers — shown only when toggle is on */}
+        {reminderOn && (
+          <div className="grid grid-cols-2 gap-2 mt-2.5">
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Data reminder</label>
+              <input
+                type="date"
+                className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-indigo-700/60 focus:border-indigo-500 outline-none"
+                value={edited.reminderDate ?? ""}
+                onChange={(e) => set("reminderDate", e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">Ora reminder</label>
+              <input
+                type="time"
+                className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-indigo-700/60 focus:border-indigo-500 outline-none"
+                value={edited.reminderTime ?? ""}
+                onChange={(e) => set("reminderTime", e.target.value)}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Actions */}

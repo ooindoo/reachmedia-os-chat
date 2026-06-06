@@ -8,9 +8,12 @@ type NotionPage = Record<string, any>;
 export interface TaskData {
   titolo: string;
   cliente: string;
-  deadline: string; // ISO date string YYYY-MM-DD
+  deadline: string;       // YYYY-MM-DD
   priorita: Priorita;
   tipoAttivita: TipoAttivita;
+  // Client-side only — NOT saved to Notion
+  reminderDate?: string;  // YYYY-MM-DD
+  reminderTime?: string;  // HH:MM
 }
 
 export async function createNotionTask(task: TaskData): Promise<NotionPage> {
