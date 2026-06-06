@@ -1,5 +1,6 @@
 import { Client } from "@notionhq/client";
 import { CLIENTS } from "./clients";
+import { toNotionId } from "./notion";
 import type { Mese, Anno, StatoPagamento, MetodoPagamento, TipoDocumento } from "./clients";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,7 +27,7 @@ export async function createNotionInvoice(invoice: InvoiceData): Promise<AnyPage
     parent: { database_id: process.env.NOTION_FATTURE_DB! },
     properties: {
       Descrizione: { title: [{ text: { content: invoice.descrizione } }] },
-      Cliente: { relation: clientInfo ? [{ id: clientInfo.id }] : [] },
+      Cliente: { relation: clientInfo ? [{ id: toNotionId(clientInfo.id) }] : [] },
       "Importo lordo": { number: invoice.importoLordo },
       Mese: { select: { name: invoice.mese } },
       Anno: { select: { name: invoice.anno } },

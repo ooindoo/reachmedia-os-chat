@@ -130,8 +130,11 @@ update_task → {
 }
 
 ━━━ REGOLE GENERALI ━━━
-- Date relative: "entro venerdì/lunedì/..." → prossima occorrenza da oggi
-- "oggi" → ${todayStr}
+- DEADLINE — REGOLA FONDAMENTALE:
+  • Se l'utente indica una data SPECIFICA con giorno+mese (es. "6 giugno", "entro il 10", "10 luglio", "il 15 del mese") → usa quella data ESATTA con anno ${currentYear()} in formato YYYY-MM-DD. NON ricalcolare, NON interpretare come giorno della settimana.
+  • Solo per termini RELATIVI (domani, dopodomani, lunedì, martedì, venerdì, "questa settimana", "fine settimana") → calcola la prossima occorrenza da ${todayStr}.
+  • "oggi" → ${todayStr}
+  • Se nessuna deadline → usa ${todayStr}
 - invoice: mese dal testo o corrente; anno dal testo o corrente; scadenza = emissione+30gg
 - timelog: ore come decimale (3h30m→3.5); "oggi"→data odierna; "alle 14"→ora HH:MM
 - update_task: negli updates includi SOLO i campi da modificare
@@ -195,9 +198,19 @@ DEFAULTS FISSI (sempre questi valori, non chiedere):
   // ── create_task ─────────────────────────────────────────────────────────────
   if (parsed.intent === "create_task") {
     let deadline = parsed.data.deadline || todayDate;
-    for (const day of dayNames) {
-      if (userMessage.toLowerCase().includes(day) && deadline === todayDate) {
-        deadline = nextWeekday(day); break;
+
+    // Only apply weekday-name fallback if:
+    // 1. The message contains a relative day name (lunedì, venerdì, etc.)
+    // 2. AND the AI returned today's date (meaning it couldn't parse a specific date)
+    // This avoids overwriting explicit dates like "6 giugno" → "2026-06-06"
+    const hasExplicitDate = /\b([1-9]|[12]\d|3[01])\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\b/i.test(userMessage)
+      || /\b(entro\s+il\s+\d{1,2}|\d{1,2}[\/\-]\d{1,2})\b/i.test(userMessage);
+
+    if (!hasExplicitDate) {
+      for (const day of dayNames) {
+        if (userMessage.toLowerCase().includes(day) && deadline === todayDate) {
+          deadline = nextWeekday(day); break;
+        }
       }
     }
     return {

@@ -1,5 +1,6 @@
 import { Client } from "@notionhq/client";
 import { CLIENTS } from "./clients";
+import { toNotionId } from "./notion";
 import type { TipoSessione, Energia, Fatturabile } from "./clients";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,7 +30,7 @@ export async function createNotionTimeLog(timelog: TimeLogData): Promise<AnyPage
     parent: { database_id: process.env.NOTION_TIMELOG_DB! },
     properties: {
       "Descrizione sessione": { title: [{ text: { content: timelog.descrizione } }] },
-      Cliente: { relation: clientInfo ? [{ id: clientInfo.id }] : [] },
+      Cliente: { relation: clientInfo ? [{ id: toNotionId(clientInfo.id) }] : [] },
       "Ore lavorate": { number: timelog.oreLavorate },
       Data: { date: { start: dateStart } },
       "Tipo sessione": { select: { name: timelog.tipoSessione } },
