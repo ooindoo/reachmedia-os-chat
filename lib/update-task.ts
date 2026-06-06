@@ -51,16 +51,14 @@ async function queryDatabase(
   return data.results as AnyPage[];
 }
 
-// Build fuzzy OR filter: searches the full phrase AND each individual word (≥3 chars)
+// Build fuzzy OR filter: full phrase + every word ≥ 2 chars
 function buildTitleFilter(query: string) {
   const words = query
     .split(/\s+/)
     .map((w) => w.replace(/[^a-zA-ZÀ-ÿ0-9]/g, ""))
-    .filter((w) => w.length >= 3);
+    .filter((w) => w.length >= 2);
 
-  const candidates = [query, ...words].filter(
-    (v, i, arr) => arr.indexOf(v) === i // dedupe
-  );
+  const candidates = Array.from(new Set([query, ...words]));
 
   if (candidates.length === 1) {
     return { property: "Task", title: { contains: candidates[0] } };
@@ -70,28 +68,46 @@ function buildTitleFilter(query: string) {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function clientFilter(clienteId: string): Record<string, any> {
+  return { property: "Cliente", relation: { contains: clienteId } };
+}
+
 export async function searchTasks(
   query: string,
   clienteName?: string
 ): Promise<TaskSearchResult[]> {
   const dbId = process.env.NOTION_TASK_DB!;
-  const titleFilter = buildTitleFilter(query);
+  const clientInfo = clienteName ? CLIENTS[clienteName] : undefined;
 
+  // ── Pass 1: fuzzy title search (+ optional client filter) ──────────────────
+  const titleF = buildTitleFilter(query);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let filter: Record<string, any> = titleFilter;
-  if (clienteName) {
-    const clientInfo = CLIENTS[clienteName];
-    if (clientInfo) {
-      filter = {
-        and: [
-          titleFilter,
-          { property: "Cliente", relation: { contains: clientInfo.id } },
-        ],
-      };
-    }
+  const pass1Filter: Record<string, any> = clientInfo
+    ? { and: [titleF, clientFilter(clientInfo.id)] }
+    : titleF;
+
+  let results = await queryDatabase(dbId, pass1Filter);
+
+  // ── Pass 2: if nothing found and client is known, search by client only ────
+  if (results.length === 0 && clientInfo) {
+    results = await queryDatabase(dbId, clientFilter(clientInfo.id));
   }
 
-  const results = await queryDatabase(dbId, filter);
+  // ── Pass 3: if still nothing, search by each word individually ─────────────
+  if (results.length === 0) {
+    const words = query
+      .split(/\s+/)
+      .map((w) => w.replace(/[^a-zA-ZÀ-ÿ0-9]/g, ""))
+      .filter((w) => w.length >= 3);
+    for (const word of words) {
+      const r = await queryDatabase(dbId, {
+        property: "Task",
+        title: { contains: word },
+      });
+      if (r.length > 0) { results = r; break; }
+    }
+  }
 
   return results.map((page) => {
     const props = page.properties as Record<string, AnyPage>;

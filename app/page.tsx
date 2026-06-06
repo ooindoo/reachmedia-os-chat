@@ -174,8 +174,9 @@ export default function ChatPage() {
 
           const tasks: TaskSearchResult[] = searchData.tasks;
           if (tasks.length === 0) {
+            const clienteHint = parsed.cliente ? ` per ${parsed.cliente}` : "";
             patchMsg(thinkingId, {
-              content: `🔍 Nessuna task trovata con "${parsed.searchQuery}". Prova con parole più specifiche.`,
+              content: `🔍 Nessuna task trovata${clienteHint}.\n\nSuggerimento: usa una parola chiave del titolo esatto della task in Notion (es. «segna fatto Chiama Squale» se la task si chiama "Chiama Squale SA").`,
             });
           } else if (tasks.length === 1) {
             patchMsg(thinkingId, {
