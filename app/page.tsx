@@ -24,20 +24,12 @@ export interface Message {
   notionUrl?: string;
 }
 
-// ── Examples ───────────────────────────────────────────────────────────────────
-const EXAMPLES = [
-  { label: "TASK", text: "chiama Squale venerdì" },
-  { label: "FATTURA", text: "fattura CappellettoShop 1500€ giugno" },
-  { label: "ORE", text: "3h su NOESI analytics oggi" },
-  { label: "UPDATE", text: "segna fatto newsletter Markershop" },
-];
-
 // ── Notification helper ────────────────────────────────────────────────────────
 async function sendNotification(title: string, body: string) {
   if (typeof window === "undefined" || !("Notification" in window)) return;
   if (Notification.permission === "default") await Notification.requestPermission();
   if (Notification.permission === "granted") {
-    new Notification(title, { body, icon: "/favicon.svg" });
+    new Notification(title, { body, icon: "/apple-icon.png" });
   }
 }
 
@@ -49,7 +41,8 @@ export default function ChatPage() {
     {
       id: "welcome",
       role: "assistant",
-      content: "Ciao. Dimmi cosa devo fare:\n• «chiama Squale venerdì»\n• «fattura CappellettoShop 1500€»\n• «3h su NOESI analytics oggi»\n• «segna fatto newsletter Markershop»",
+      content:
+        "Ciao. Dimmi cosa devo fare:\n• «chiama Squale venerdì»\n• «fattura CappellettoShop 1500€»\n• «3h su NOESI analytics oggi»\n• «segna fatto newsletter Markershop»",
     },
   ]);
   const [input, setInput] = useState("");
@@ -166,7 +159,10 @@ export default function ChatPage() {
         const rid = saveReminder({ taskTitle: task.titolo, cliente: task.cliente, reminderAt: `${task.reminderDate}T${task.reminderTime}:00`, notionUrl: data.url ?? "" });
         await scheduleReminder({ taskTitle: task.titolo, cliente: task.cliente, reminderAt: `${task.reminderDate}T${task.reminderTime}:00`, notionUrl: data.url ?? "", id: rid, notified: false, createdAt: Date.now() });
       }
-      patchMsg(msgId, { content: `✓ Task "${task.titolo}" salvata${task.reminderDate && task.reminderTime ? `\n🔔 Reminder ${task.reminderDate} alle ${task.reminderTime}` : ""}`, notionUrl: data.url });
+      patchMsg(msgId, {
+        content: `✓ Task "${task.titolo}" salvata${task.reminderDate && task.reminderTime ? `\n🔔 Reminder ${task.reminderDate} alle ${task.reminderTime}` : ""}`,
+        notionUrl: data.url,
+      });
     } catch { patchMsg(msgId, { content: "❌ Errore di rete." }); }
     finally { setSavingId(null); }
   };
@@ -223,136 +219,88 @@ export default function ChatPage() {
   const hasActivePending = messages.some((m) => m.pending && savingId !== m.id);
 
   return (
-    <div className="flex h-screen bg-rm-bg overflow-hidden">
+    <div className="flex flex-col h-screen bg-black overflow-hidden">
 
-      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-[200px] lg:w-[220px] border-r border-rm-border shrink-0 p-5 overflow-y-auto">
-        {/* Logo */}
-        <div className="mb-6">
-          <svg viewBox="0 0 160 18" width="160" height="18" aria-label="REACHMEDIA.IT">
-            <text x="0" y="16" font-family="system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-weight="900" font-size="16" fill="#FFFFFF" text-anchor="start" letter-spacing="-0.5">REACHMEDIA.IT</text>
-          </svg>
-          <p className="text-rm-muted text-[10px] uppercase tracking-[0.15em] mt-1">
-            OS CHAT
-          </p>
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <header className="shrink-0 flex items-center justify-between px-4 md:px-6 py-4 border-b border-[#1a1a1a]">
+        <div>
+          <h1 className="text-white font-black uppercase tracking-tight text-[15px] leading-none">
+            REACHMEDIA.IT
+          </h1>
+          <p className="text-[#444] text-[11px] mt-1">OS · Task · Fatture · Time Log</p>
         </div>
+        <button
+          onClick={toggleNotifications}
+          className="flex items-center gap-2.5 shrink-0"
+          title={notificationsOn ? "Disattiva notifiche" : "Attiva notifiche"}
+        >
+          <span className="hidden sm:block text-[10px] text-[#555] uppercase tracking-[0.12em] font-semibold">
+            NOTIFICHE
+          </span>
+          <div className={`relative w-8 h-4 transition-colors ${notificationsOn ? "bg-rm-accent" : "bg-[#222]"}`}>
+            <span className={`absolute top-0.5 w-3 h-3 bg-black transition-all ${notificationsOn ? "translate-x-4" : "translate-x-0.5"}`} />
+          </div>
+        </button>
+      </header>
 
-        <div className="border-t border-rm-border mb-5" />
-
-        {/* Examples */}
-        <div className="space-y-1 flex-1">
-          <p className="text-[#444] text-[9px] font-black uppercase tracking-[0.15em] mb-3">ESEMPI</p>
-          {EXAMPLES.map((ex) => (
-            <button
-              key={ex.text}
-              onClick={() => handleSend(ex.text)}
-              className="block w-full text-left group py-1.5"
-            >
-              <span className="rm-chip mr-2">{ex.label}</span>
-              <span className="text-rm-muted text-xs group-hover:text-white transition-colors">
-                {ex.text}
-              </span>
-            </button>
+      {/* ── Messages ─────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-[680px] mx-auto px-4 md:px-6 py-6 space-y-4">
+          {messages.map((msg) => (
+            <ChatMessage
+              key={msg.id}
+              message={msg}
+              onConfirmTask={msg.pending?.type === "create_task" && savingId !== msg.id ? (d) => handleConfirmTask(msg.id, d) : undefined}
+              onConfirmInvoice={msg.pending?.type === "create_invoice" && savingId !== msg.id ? (d) => handleConfirmInvoice(msg.id, d) : undefined}
+              onConfirmTimeLog={msg.pending?.type === "create_timelog" && savingId !== msg.id ? (d) => handleConfirmTimeLog(msg.id, d) : undefined}
+              onSelectTask={msg.pending?.type === "select_task" && savingId !== msg.id ? (task) => handleSelectTask(msg.id, task, (msg.pending as { type: "select_task"; tasks: TaskSearchResult[]; updates: TaskUpdate }).updates) : undefined}
+              onConfirmUpdate={msg.pending?.type === "confirm_update" && savingId !== msg.id ? (updates) => handleConfirmUpdate(msg.id, (msg.pending as { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate }).task, updates) : undefined}
+              onCancel={msg.pending && savingId !== msg.id ? () => handleCancel(msg.id) : undefined}
+            />
           ))}
-        </div>
-
-        <div className="border-t border-rm-border my-5" />
-
-        {/* Notifications + status */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-rm-muted uppercase tracking-[0.12em] font-semibold">
-              NOTIFICHE
-            </span>
-            <button
-              onClick={toggleNotifications}
-              className="flex items-center gap-2"
-              title={notificationsOn ? "Disattiva" : "Attiva"}
-            >
-              <div className={`relative w-8 h-4 transition-colors ${notificationsOn ? "bg-rm-accent" : "bg-rm-faint"}`}>
-                <span className={`absolute top-0.5 w-3 h-3 bg-black transition-transform ${notificationsOn ? "translate-x-4" : "translate-x-0.5"}`} />
-              </div>
-              <span className={`text-base leading-none ${notificationsOn ? "text-rm-accent" : "text-rm-faint"}`}>
-                {notificationsOn ? "🔔" : "🔕"}
-              </span>
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="w-1.5 h-1.5 bg-rm-accent animate-pulse block" />
-            <span className="text-[10px] text-rm-muted uppercase tracking-[0.12em]">ONLINE</span>
-          </div>
-        </div>
-      </aside>
-
-      {/* ── Main area ───────────────────────────────────────────────────── */}
-      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
-
-        {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-rm-border shrink-0">
-          <div className="flex items-center gap-2">
-            <svg viewBox="0 0 130 14" width="130" height="14" aria-label="REACHMEDIA.IT">
-              <text x="0" y="12" font-family="system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif" font-weight="900" font-size="13" fill="#FFFFFF" text-anchor="start" letter-spacing="-0.3">REACHMEDIA.IT</text>
-            </svg>
-            <span className="text-rm-muted text-[10px] uppercase tracking-widest hidden xs:inline">OS</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <button onClick={toggleNotifications}>
-              <span className={`text-base ${notificationsOn ? "text-rm-accent" : "text-rm-faint"}`}>
-                {notificationsOn ? "🔔" : "🔕"}
-              </span>
-            </button>
-            <span className="w-1.5 h-1.5 bg-rm-accent animate-pulse block" />
-          </div>
-        </header>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="max-w-[700px] mx-auto px-4 md:px-6 py-6 space-y-1">
-            {messages.map((msg) => (
-              <ChatMessage
-                key={msg.id}
-                message={msg}
-                onConfirmTask={msg.pending?.type === "create_task" && savingId !== msg.id ? (d) => handleConfirmTask(msg.id, d) : undefined}
-                onConfirmInvoice={msg.pending?.type === "create_invoice" && savingId !== msg.id ? (d) => handleConfirmInvoice(msg.id, d) : undefined}
-                onConfirmTimeLog={msg.pending?.type === "create_timelog" && savingId !== msg.id ? (d) => handleConfirmTimeLog(msg.id, d) : undefined}
-                onSelectTask={msg.pending?.type === "select_task" && savingId !== msg.id ? (task) => handleSelectTask(msg.id, task, (msg.pending as { type: "select_task"; tasks: TaskSearchResult[]; updates: TaskUpdate }).updates) : undefined}
-                onConfirmUpdate={msg.pending?.type === "confirm_update" && savingId !== msg.id ? (updates) => handleConfirmUpdate(msg.id, (msg.pending as { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate }).task, updates) : undefined}
-                onCancel={msg.pending && savingId !== msg.id ? () => handleCancel(msg.id) : undefined}
-              />
-            ))}
-            <div ref={bottomRef} />
-          </div>
-        </div>
-
-        {/* Input */}
-        <div className="border-t border-rm-border shrink-0 px-4 md:px-6 py-4">
-          <div className="max-w-[700px] mx-auto">
-            <div className={`flex items-end gap-3 border-b pb-2 transition-colors ${hasActivePending ? "border-rm-faint opacity-50" : "border-rm-faint focus-within:border-rm-accent"}`}>
-              <textarea
-                ref={inputRef}
-                rows={1}
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                disabled={loading || hasActivePending}
-                placeholder={hasActivePending ? "Conferma o annulla prima di continuare…" : "Scrivi una task, fattura, ore o aggiornamento…"}
-                className="flex-1 bg-transparent text-white text-sm resize-none outline-none leading-5 max-h-[120px] py-0.5 placeholder-rm-faint disabled:cursor-not-allowed"
-              />
-              <button
-                onClick={() => handleSend()}
-                disabled={!input.trim() || loading || hasActivePending}
-                aria-label="Invia"
-                className="shrink-0 mb-0.5 bg-rm-accent text-black font-black text-xs uppercase px-3 py-1.5 hover:bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                {loading ? "…" : "INVIA"}
-              </button>
-            </div>
-            <p className="text-rm-faint text-[10px] uppercase tracking-[0.12em] mt-2">
-              ENTER invia · SHIFT+ENTER a capo
-            </p>
-          </div>
+          <div ref={bottomRef} />
         </div>
       </div>
+
+      {/* ── Input ─────────────────────────────────────────────────────────── */}
+      <div className="shrink-0 border-t border-[#1a1a1a]">
+        <div className="max-w-[680px] mx-auto px-4 md:px-6 py-5">
+          <div
+            className={`flex items-end gap-3 border-b pb-2 transition-colors ${
+              hasActivePending
+                ? "border-[#222] opacity-50"
+                : "border-[#333] focus-within:border-rm-accent"
+            }`}
+          >
+            <textarea
+              ref={inputRef}
+              rows={1}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              disabled={loading || hasActivePending}
+              placeholder={
+                hasActivePending
+                  ? "Conferma o annulla prima di continuare…"
+                  : "Task, fattura, ore, aggiornamento…"
+              }
+              className="flex-1 bg-transparent text-white text-sm resize-none leading-5 max-h-[120px] py-0.5 placeholder-[#555] disabled:cursor-not-allowed"
+            />
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim() || loading || hasActivePending}
+              aria-label="Invia"
+              className="shrink-0 mb-0.5 bg-rm-accent text-black font-black text-[11px] uppercase px-4 py-2 hover:bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {loading ? "…" : "INVIA"}
+            </button>
+          </div>
+          <p className="text-[#444] text-[10px] uppercase tracking-[0.1em] mt-2">
+            ENTER invia · SHIFT+ENTER a capo
+          </p>
+        </div>
+      </div>
+
     </div>
   );
 }

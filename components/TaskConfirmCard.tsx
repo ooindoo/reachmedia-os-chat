@@ -10,6 +10,11 @@ interface Props {
   onCancel: () => void;
 }
 
+const fi = "w-full bg-transparent text-white text-sm border-b border-[#333] focus:border-[#CCFF00] pb-0.5 placeholder-[#444]";
+const fs = "w-full bg-transparent text-white text-sm border-b border-[#333] focus:border-[#CCFF00] pb-0.5 cursor-pointer rm-select-arrow";
+const fl = "shrink-0 w-[110px] text-[11px] text-[#555] uppercase tracking-[0.08em] font-semibold leading-[1.4]";
+const fr = "flex items-start gap-3 px-4 py-3 border-b border-[#1a1a1a]";
+
 export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
   const [e, setE] = useState<TaskData>({
     ...task,
@@ -19,7 +24,6 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
     reminderTime: task.reminderTime ?? "",
   });
   const [reminderOn, setReminderOn] = useState(!!(task.reminderTime && task.reminderTime !== ""));
-
   const set = <K extends keyof TaskData>(k: K, v: TaskData[K]) => setE((p) => ({ ...p, [k]: v }));
 
   const toggleReminder = () => {
@@ -30,116 +34,125 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
   };
 
   return (
-    <div className="bg-rm-surface border border-rm-border w-full max-w-[480px]">
+    <div className="bg-[#111111] border border-[#222] w-full max-w-[520px]">
+
       {/* Header */}
-      <div className="border-b border-rm-border px-4 py-3">
-        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-rm-muted">📋 NUOVA TASK</span>
+      <div className="px-4 py-3 border-b border-[#1a1a1a]">
+        <span className="text-[11px] font-black uppercase tracking-[0.12em] text-white">NUOVA TASK</span>
       </div>
 
-      <div className="px-4 py-4 space-y-4">
-        {/* Titolo */}
-        <div>
-          <label className="rm-label">TITOLO</label>
-          <input className="rm-input" value={e.titolo} onChange={(ev) => set("titolo", ev.target.value)} />
-        </div>
+      {/* TITOLO */}
+      <div className={fr}>
+        <span className={fl}>TITOLO</span>
+        <input className={fi} value={e.titolo} onChange={(ev) => set("titolo", ev.target.value)} placeholder="titolo task" />
+      </div>
 
-        {/* Cliente + Deadline */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="rm-label">CLIENTE</label>
-            <select className="rm-select" value={e.cliente} onChange={(ev) => set("cliente", ev.target.value)}>
-              <option value="">— nessuno —</option>
-              {CLIENT_NAMES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="rm-label">DEADLINE</label>
-            <input type="date" className="rm-input" value={e.deadline} onChange={(ev) => set("deadline", ev.target.value)} />
-          </div>
-        </div>
+      {/* CLIENTE */}
+      <div className={fr}>
+        <span className={fl}>CLIENTE</span>
+        <select className={fs} value={e.cliente} onChange={(ev) => set("cliente", ev.target.value)}>
+          <option value="">— nessuno —</option>
+          {CLIENT_NAMES.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
 
-        {/* Tipo + Canale */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="rm-label">TIPO ATTIVITÀ</label>
-            <select className="rm-select" value={e.tipoAttivita} onChange={(ev) => set("tipoAttivita", ev.target.value as TaskData["tipoAttivita"])}>
-              {TIPI_ATTIVITA.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="rm-label">CANALE</label>
-            <select className="rm-select" value={e.canale ?? ""} onChange={(ev) => set("canale", ev.target.value as TaskData["canale"] || undefined)}>
-              <option value="">— nessuno —</option>
-              {CANALE_OPTS.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-        </div>
+      {/* DEADLINE */}
+      <div className={fr}>
+        <span className={fl}>DEADLINE</span>
+        <input type="date" className={fi} value={e.deadline} onChange={(ev) => set("deadline", ev.target.value)} />
+      </div>
 
-        {/* Priorità */}
-        <div>
-          <label className="rm-label">PRIORITÀ</label>
-          <div className="flex gap-2 mt-1">
-            {PRIORITA.map((p) => (
-              <button key={p} onClick={() => set("priorita", p)}
-                className={`flex-1 py-1.5 text-xs font-black uppercase tracking-wide transition-colors ${
-                  e.priorita === p ? "bg-rm-accent text-black" : "border border-rm-border text-rm-muted hover:text-white"
-                }`}
-              >{p}</button>
-            ))}
-          </div>
-        </div>
+      {/* TIPO ATTIVITÀ */}
+      <div className={fr}>
+        <span className={fl}>TIPO</span>
+        <select className={fs} value={e.tipoAttivita} onChange={(ev) => set("tipoAttivita", ev.target.value as TaskData["tipoAttivita"])}>
+          {TIPI_ATTIVITA.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
 
-        {/* Bloccato + Approvazione */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="rm-label">BLOCCATO DA</label>
-            <select className="rm-select" value={e.bloccatoDa ?? ""} onChange={(ev) => set("bloccatoDa", ev.target.value as TaskData["bloccatoDa"])}>
-              {BLOCCATO_DA_OPTS.map((b) => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="rm-label">APPROVAZIONE</label>
-            <select className="rm-select" value={e.approvazioneCliente ?? ""} onChange={(ev) => set("approvazioneCliente", ev.target.value as TaskData["approvazioneCliente"])}>
-              {APPROVAZIONE_OPTS.map((a) => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Reminder */}
-        <div className="border-t border-rm-border pt-4">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[10px] font-black uppercase tracking-[0.12em] text-rm-muted">
-              {reminderOn ? "🔔" : "🔕"} REMINDER NOTIFICA
-            </span>
-            <button onClick={toggleReminder}
-              className={`relative w-8 h-4 transition-colors ${reminderOn ? "bg-rm-accent" : "bg-rm-faint"}`}>
-              <span className={`absolute top-0.5 w-3 h-3 bg-black transition-transform ${reminderOn ? "translate-x-4" : "translate-x-0.5"}`} />
+      {/* PRIORITÀ — badge buttons */}
+      <div className={fr}>
+        <span className={`${fl} pt-0.5`}>PRIORITÀ</span>
+        <div className="flex flex-wrap gap-1.5">
+          {PRIORITA.map((p) => (
+            <button
+              key={p}
+              onClick={() => set("priorita", p)}
+              className={`px-2.5 py-[3px] text-[11px] font-black uppercase bg-[#1a1a1a] border border-[#333] transition-colors ${e.priorita === p ? "text-[#CCFF00]" : "text-[#555]"}`}
+            >
+              {p}
             </button>
-          </div>
+          ))}
+        </div>
+      </div>
+
+      {/* CANALE */}
+      <div className={fr}>
+        <span className={fl}>CANALE</span>
+        <select className={fs} value={e.canale ?? ""} onChange={(ev) => set("canale", (ev.target.value as TaskData["canale"]) || undefined)}>
+          <option value="">— nessuno —</option>
+          {CANALE_OPTS.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </div>
+
+      {/* BLOCCATO DA */}
+      <div className={fr}>
+        <span className={fl}>BLOCCATO</span>
+        <select className={fs} value={e.bloccatoDa ?? ""} onChange={(ev) => set("bloccatoDa", ev.target.value as TaskData["bloccatoDa"])}>
+          {BLOCCATO_DA_OPTS.map((b) => <option key={b} value={b}>{b}</option>)}
+        </select>
+      </div>
+
+      {/* APPROVAZIONE */}
+      <div className={fr}>
+        <span className={fl}>APPROV.</span>
+        <select className={fs} value={e.approvazioneCliente ?? ""} onChange={(ev) => set("approvazioneCliente", ev.target.value as TaskData["approvazioneCliente"])}>
+          {APPROVAZIONE_OPTS.map((a) => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </div>
+
+      {/* REMINDER */}
+      <div className={`${fr} items-center`}>
+        <span className={fl}>REMINDER</span>
+        <div className="flex items-center gap-3 flex-1 flex-wrap min-w-0">
+          <button
+            onClick={toggleReminder}
+            className={`relative w-8 h-4 shrink-0 transition-colors ${reminderOn ? "bg-[#CCFF00]" : "bg-[#222]"}`}
+          >
+            <span className={`absolute top-0.5 w-3 h-3 bg-black transition-all ${reminderOn ? "translate-x-4" : "translate-x-0.5"}`} />
+          </button>
           {reminderOn && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="rm-label">DATA REMINDER</label>
-                <input type="date" className="rm-input" value={e.reminderDate ?? ""} onChange={(ev) => set("reminderDate", ev.target.value)} />
-              </div>
-              <div>
-                <label className="rm-label">ORA REMINDER</label>
-                <input type="time" className="rm-input" value={e.reminderTime ?? ""} onChange={(ev) => set("reminderTime", ev.target.value)} />
-              </div>
-            </div>
+            <>
+              <input
+                type="date"
+                className="flex-1 min-w-0 bg-transparent text-white text-sm border-b border-[#333] focus:border-[#CCFF00] pb-0.5"
+                value={e.reminderDate ?? ""}
+                onChange={(ev) => set("reminderDate", ev.target.value)}
+              />
+              <input
+                type="time"
+                className="w-[88px] bg-transparent text-white text-sm border-b border-[#333] focus:border-[#CCFF00] pb-0.5"
+                value={e.reminderTime ?? ""}
+                onChange={(ev) => set("reminderTime", ev.target.value)}
+              />
+            </>
           )}
         </div>
       </div>
 
       {/* Actions */}
-      <div className="border-t border-rm-border flex">
-        <button onClick={onCancel}
-          className="flex-1 py-3 text-xs text-rm-muted uppercase tracking-[0.12em] font-semibold border-r border-rm-border hover:text-white transition-colors">
-          ANNULLA
-        </button>
-        <button onClick={() => onConfirm(e)}
-          className="flex-[2] py-3 bg-rm-accent text-black text-xs font-black uppercase tracking-[0.1em] hover:bg-white transition-colors">
+      <div className="p-4 flex flex-col gap-2">
+        <button
+          onClick={() => onConfirm(e)}
+          className="w-full py-3 bg-[#CCFF00] text-black text-[11px] font-black uppercase tracking-[0.08em] hover:bg-white transition-colors"
+        >
           SALVA SU NOTION
+        </button>
+        <button
+          onClick={onCancel}
+          className="w-full py-[11px] bg-transparent border border-[#333] text-[#666] text-[11px] uppercase tracking-[0.08em] font-semibold hover:text-white hover:border-[#555] transition-colors"
+        >
+          ANNULLA
         </button>
       </div>
     </div>
