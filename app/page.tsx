@@ -147,15 +147,18 @@ export default function ChatPage() {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        const errMsg = [
-          data.error ?? "Errore nel salvataggio su Notion.",
-          data.details ? `\nDettaglio: ${JSON.stringify(data.details)}` : "",
-        ]
-          .join("")
-          .trim();
+        // Show a clean user-friendly message
+        let userMsg = "Errore nel salvataggio su Notion. Riprova.";
+        if (data.error?.includes("object_not_found") || data.error?.includes("not find database")) {
+          userMsg = "⚠️ Il database Notion non è ancora condiviso con l'integrazione \"reachmedia-os\". Vai su Notion → apri il database Task → ··· → Connessioni → aggiungi reachmedia-os.";
+        } else if (data.error?.includes("unauthorized") || data.error?.includes("API token")) {
+          userMsg = "⚠️ Token Notion non valido. Controlla le variabili d'ambiente su Vercel.";
+        } else if (data.error) {
+          userMsg = `Errore Notion: ${data.error}`;
+        }
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === msgId ? { ...m, content: `❌ ${errMsg}` } : m
+            m.id === msgId ? { ...m, content: userMsg } : m
           )
         );
         return;
