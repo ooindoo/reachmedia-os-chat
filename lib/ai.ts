@@ -1,12 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  CLIENT_NAMES, TIPI_ATTIVITA, PRIORITA,
+  CLIENT_NAMES, TIPI_ATTIVITA, PRIORITA, CANALE_OPTS,
   MESI, ANNI, STATI_PAGAMENTO, METODI_PAGAMENTO, TIPI_DOCUMENTO,
   TIPI_SESSIONE, ENERGIE, FATTURABILE_OPTS,
   STATI_TASK, BLOCCATO_DA_OPTS, APPROVAZIONE_OPTS,
 } from "./clients";
 import type {
-  TipoAttivita, Priorita as PrioritaT,
+  TipoAttivita, Priorita as PrioritaT, Canale,
   Mese, Anno, StatoPagamento, MetodoPagamento, TipoDocumento,
   TipoSessione, Energia, Fatturabile,
 } from "./clients";
@@ -71,11 +71,14 @@ Rispondi SOLO con JSON valido (nessun testo extra).
 create_task → {
   "intent":"create_task",
   "data":{
-    "titolo":"...",
-    "cliente":"nome esatto o ''",
+    "titolo":"titolo professionale e chiaro (es. 'Chiama Squale SA', 'Newsletter giugno CappellettoShop')",
+    "cliente":"nome esatto dalla lista o ''",
     "deadline":"YYYY-MM-DD",
     "priorita":"${PRIORITA.join("|")}",
-    "tipoAttivita":"${TIPI_ATTIVITA.join("|")}"
+    "tipoAttivita":"${TIPI_ATTIVITA.join("|")}",
+    "canale":"${CANALE_OPTS.join("|")} oppure ''",
+    "bloccatoDa":"➖ Non bloccato",
+    "approvazioneCliente":"➖ Non necessaria"
   }
 }
 
@@ -126,18 +129,52 @@ update_task → {
   }
 }
 
-━━━ REGOLE ━━━
-- "entro venerdì/lunedì/..." → prossima occorrenza di quel giorno da oggi
+━━━ REGOLE GENERALI ━━━
+- Date relative: "entro venerdì/lunedì/..." → prossima occorrenza da oggi
 - "oggi" → ${todayStr}
-- "urgente" → priorità 🔴 Urgente
-- "chiama/call" → tipo task 📞 Call / Meeting
-- "newsletter" → tipo task 📧 Newsletter
-- "fix/bug" → 🐛 Fix / Bug
-- invoice: "pagata bonifico" → statoPagamento:"Pagata", metodoPagamento:"🏦 Bonifico"
-- invoice: mese dal testo o corrente; anno dal testo o corrente; scadenza = emissione+30gg se non specificata
-- timelog: ore come decimale (es. 3h30m→3.5); "oggi" → data odierna; default fatturabile "✅ Sì"; "alle 14" o "14:30" → ora in formato HH:MM, altrimenti ''
-- update_task: negli updates includi SOLO i campi da modificare, ometti il resto
-- Usa valori ESATTI con emoji dalle liste`;
+- invoice: mese dal testo o corrente; anno dal testo o corrente; scadenza = emissione+30gg
+- timelog: ore come decimale (3h30m→3.5); "oggi"→data odierna; "alle 14"→ora HH:MM
+- update_task: negli updates includi SOLO i campi da modificare
+- Usa valori ESATTI con emoji dalle liste
+
+━━━ REGOLE DEDUZIONE create_task ━━━
+TITOLO: professionale in italiano, includi il cliente. Es: "chiama Squale entro venerdì"→"Chiama Squale SA".
+
+TIPO ATTIVITÀ + CANALE (abbina sempre entrambi):
+- chiama/chiamata/call/telefona → "📞 Call / Meeting" + "📞 Telefono / WhatsApp"
+- newsletter/email marketing/campagna email → "📧 Newsletter" + "📨 Klaviyo"
+- flow/automation/automazione → "🔄 Flow / Automation" + "📨 Klaviyo"
+- shopify/store/prodotto/tema → "🛍 Shopify Dev" + "🛒 Shopify"
+- report/analytics/analisi/statistiche → "📊 Report / Analytics" + ''
+- meta/facebook/instagram ads → "📱 Social / Meta" + "📘 Meta Ads"
+- google ads/pmax/sem → "📊 Report / Analytics" + "🔍 Google Ads"
+- airbnb/ospite/prenotazione → "📬 Airbnb Messaggistica" + "🏠 Airbnb"
+- fix/bug/errore → "🐛 Fix / Bug" + ''
+- copy/testo/scrivi/contenuto → "✍️ Copy / Content" + ''
+- setup/configura/installa → "🔧 Setup / Configurazione" + ''
+- meeting/riunione/zoom/videocall → "📞 Call / Meeting" + "📞 Telefono / WhatsApp"
+- default → "✍️ Copy / Content" + ''
+
+PRIORITÀ:
+- urgente/asap/subito/importante → "🔴 Urgente"
+- bassa/quando puoi/non urgente → "🟢 Bassa"
+- default → "🟡 Media"
+
+CLIENTE: Mappa anche abbreviazioni:
+- squale → "Squale SA"
+- cappelletto/cappellettos/cappe → "CappellettoShop"
+- noesi → "NOESI"
+- opplant → "Opplant"
+- markershop → "Markershop"
+- shiro/shirò/pagani → "Shirò Pagani Boutique"
+- sicura → "Sicura"
+- stewart/dawson → "Stewart Dawson"
+- toniolo/airbnb giuseppe → "Giuseppe Toniolo Airbnb"
+- luxyt → "Luxyt"
+
+DEFAULTS FISSI (sempre questi valori, non chiedere):
+- bloccatoDa: "➖ Non bloccato"
+- approvazioneCliente: "➖ Non necessaria"`;
 
   const msg = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
@@ -173,6 +210,10 @@ update_task → {
           ? (parsed.data.priorita as PrioritaT) : "🟡 Media",
         tipoAttivita: (TIPI_ATTIVITA as readonly string[]).includes(parsed.data.tipoAttivita)
           ? (parsed.data.tipoAttivita as TipoAttivita) : "✍️ Copy / Content",
+        canale: (CANALE_OPTS as readonly string[]).includes(parsed.data.canale)
+          ? (parsed.data.canale as Canale) : undefined,
+        bloccatoDa: "➖ Non bloccato" as const,
+        approvazioneCliente: "➖ Non necessaria" as const,
       },
     };
   }

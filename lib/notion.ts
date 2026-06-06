@@ -1,6 +1,6 @@
 import { Client } from "@notionhq/client";
 import { CLIENTS } from "./clients";
-import type { TipoAttivita, Priorita } from "./clients";
+import type { TipoAttivita, Priorita, Canale, BloccatoDa, ApprovazioneCliente } from "./clients";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type NotionPage = Record<string, any>;
@@ -8,12 +8,15 @@ type NotionPage = Record<string, any>;
 export interface TaskData {
   titolo: string;
   cliente: string;
-  deadline: string;       // YYYY-MM-DD
+  deadline: string;                      // YYYY-MM-DD
   priorita: Priorita;
   tipoAttivita: TipoAttivita;
+  canale?: Canale;                        // optional — saved if set
+  bloccatoDa?: BloccatoDa;               // default: ➖ Non bloccato
+  approvazioneCliente?: ApprovazioneCliente; // default: ➖ Non necessaria
   // Client-side only — NOT saved to Notion
-  reminderDate?: string;  // YYYY-MM-DD
-  reminderTime?: string;  // HH:MM
+  reminderDate?: string;
+  reminderTime?: string;
 }
 
 export async function createNotionTask(task: TaskData): Promise<NotionPage> {
@@ -21,35 +24,19 @@ export async function createNotionTask(task: TaskData): Promise<NotionPage> {
   const dbId = process.env.NOTION_TASK_DB!;
   const clientInfo = CLIENTS[task.cliente];
 
-  const page = await notion.pages.create({
-    parent: { database_id: dbId },
-    properties: {
-      // "Task" is the title field
-      Task: {
-        title: [{ text: { content: task.titolo } }],
-      },
-      // Relation to the client page
-      Cliente: {
-        relation: clientInfo ? [{ id: clientInfo.id }] : [],
-      },
-      // Date
-      Deadline: {
-        date: { start: task.deadline },
-      },
-      // Select field for priority
-      "Priorità": {
-        select: { name: task.priorita },
-      },
-      // Select field for task type
-      "Tipo attività": {
-        select: { name: task.tipoAttivita },
-      },
-      // Status field
-      Stato: {
-        status: { name: "Not started" },
-      },
-    },
-  }) as NotionPage;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const properties: Record<string, any> = {
+    Task:          { title: [{ text: { content: task.titolo } }] },
+    Cliente:       { relation: clientInfo ? [{ id: clientInfo.id }] : [] },
+    Deadline:      { date: { start: task.deadline } },
+    "Priorità":    { select: { name: task.priorita } },
+    "Tipo attività": { select: { name: task.tipoAttivita } },
+    Stato:         { status: { name: "Not started" } },
+  };
 
-  return page;
+  if (task.canale)               properties["Canale"] = { select: { name: task.canale } };
+  if (task.bloccatoDa)           properties["Bloccato da"] = { select: { name: task.bloccatoDa } };
+  if (task.approvazioneCliente)  properties["Approvazione cliente"] = { select: { name: task.approvazioneCliente } };
+
+  return notion.pages.create({ parent: { database_id: dbId }, properties }) as Promise<NotionPage>;
 }

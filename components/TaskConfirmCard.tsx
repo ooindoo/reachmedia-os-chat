@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { CLIENT_NAMES, TIPI_ATTIVITA, PRIORITA } from "@/lib/clients";
+import {
+  CLIENT_NAMES, TIPI_ATTIVITA, PRIORITA,
+  CANALE_OPTS, BLOCCATO_DA_OPTS, APPROVAZIONE_OPTS,
+} from "@/lib/clients";
 import type { TaskData } from "@/lib/notion";
 
 interface Props {
@@ -11,84 +14,93 @@ interface Props {
 }
 
 export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
-  const [edited, setEdited] = useState<TaskData>({
+  const [e, setE] = useState<TaskData>({
     ...task,
+    bloccatoDa: task.bloccatoDa ?? "➖ Non bloccato",
+    approvazioneCliente: task.approvazioneCliente ?? "➖ Non necessaria",
     reminderDate: task.reminderDate ?? "",
     reminderTime: task.reminderTime ?? "",
   });
   const [reminderOn, setReminderOn] = useState(false);
 
-  const set = <K extends keyof TaskData>(key: K, value: TaskData[K]) =>
-    setEdited((prev) => ({ ...prev, [key]: value }));
+  const set = <K extends keyof TaskData>(k: K, v: TaskData[K]) =>
+    setE((p) => ({ ...p, [k]: v }));
 
   const toggleReminder = () => {
     const next = !reminderOn;
     setReminderOn(next);
-    if (!next) {
-      setEdited((p) => ({ ...p, reminderDate: "", reminderTime: "" }));
-    } else {
-      // Pre-fill with deadline date and 09:00
-      setEdited((p) => ({
-        ...p,
-        reminderDate: p.reminderDate || p.deadline,
-        reminderTime: p.reminderTime || "09:00",
-      }));
-    }
+    if (!next) setE((p) => ({ ...p, reminderDate: "", reminderTime: "" }));
+    else setE((p) => ({
+      ...p,
+      reminderDate: p.reminderDate || p.deadline,
+      reminderTime: p.reminderTime || "09:00",
+    }));
   };
 
   return (
     <div className="bg-zinc-800 border border-zinc-700 rounded-2xl p-4 space-y-3 max-w-sm w-full">
-      <p className="text-xs text-zinc-400 uppercase tracking-widest font-semibold">
-        Conferma task
-      </p>
+      <p className="text-xs text-zinc-400 uppercase tracking-widest font-semibold">📋 Conferma task</p>
 
       {/* Titolo */}
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">Titolo</label>
         <input
           className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
-          value={edited.titolo}
-          onChange={(e) => set("titolo", e.target.value)}
+          value={e.titolo}
+          onChange={(ev) => set("titolo", ev.target.value)}
         />
       </div>
 
-      {/* Cliente */}
-      <div>
-        <label className="text-xs text-zinc-400 mb-1 block">Cliente</label>
-        <select
-          className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
-          value={edited.cliente}
-          onChange={(e) => set("cliente", e.target.value)}
-        >
-          <option value="">— Nessun cliente —</option>
-          {CLIENT_NAMES.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
+      {/* Cliente + Deadline */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Cliente</label>
+          <select
+            className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
+            value={e.cliente}
+            onChange={(ev) => set("cliente", ev.target.value)}
+          >
+            <option value="">— Nessuno —</option>
+            {CLIENT_NAMES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Deadline</label>
+          <input
+            type="date"
+            className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
+            value={e.deadline}
+            onChange={(ev) => set("deadline", ev.target.value)}
+          />
+        </div>
       </div>
 
-      {/* Deadline */}
-      <div>
-        <label className="text-xs text-zinc-400 mb-1 block">Deadline</label>
-        <input
-          type="date"
-          className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
-          value={edited.deadline}
-          onChange={(e) => set("deadline", e.target.value)}
-        />
+      {/* Tipo attività + Canale */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Tipo attività</label>
+          <select
+            className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
+            value={e.tipoAttivita}
+            onChange={(ev) => set("tipoAttivita", ev.target.value as TaskData["tipoAttivita"])}
+          >
+            {TIPI_ATTIVITA.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Canale</label>
+          <select
+            className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
+            value={e.canale ?? ""}
+            onChange={(ev) => set("canale", ev.target.value as TaskData["canale"] || undefined)}
+          >
+            <option value="">— Nessuno —</option>
+            {CANALE_OPTS.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
       </div>
 
-      {/* Tipo attività */}
-      <div>
-        <label className="text-xs text-zinc-400 mb-1 block">Tipo attività</label>
-        <select
-          className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
-          value={edited.tipoAttivita}
-          onChange={(e) => set("tipoAttivita", e.target.value as TaskData["tipoAttivita"])}
-        >
-          {TIPI_ATTIVITA.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-      </div>
-
-      {/* Priorità */}
+      {/* Priorità chips */}
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">Priorità</label>
         <div className="flex gap-2">
@@ -97,7 +109,7 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
               key={p}
               onClick={() => set("priorita", p)}
               className={`flex-1 text-xs py-1.5 rounded-lg border transition-colors ${
-                edited.priorita === p
+                e.priorita === p
                   ? "border-indigo-500 bg-indigo-500/20 text-white"
                   : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
               }`}
@@ -108,9 +120,32 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
         </div>
       </div>
 
-      {/* ── Reminder ─────────────────────────────────────────────────────── */}
+      {/* Bloccato da + Approvazione */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Bloccato da</label>
+          <select
+            className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
+            value={e.bloccatoDa ?? "➖ Non bloccato"}
+            onChange={(ev) => set("bloccatoDa", ev.target.value as TaskData["bloccatoDa"])}
+          >
+            {BLOCCATO_DA_OPTS.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Approvazione</label>
+          <select
+            className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-zinc-700 focus:border-indigo-500 outline-none"
+            value={e.approvazioneCliente ?? "➖ Non necessaria"}
+            onChange={(ev) => set("approvazioneCliente", ev.target.value as TaskData["approvazioneCliente"])}
+          >
+            {APPROVAZIONE_OPTS.map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* ── Reminder ────────────────────────────────────────────────────── */}
       <div className="border-t border-zinc-700/50 pt-3">
-        {/* Toggle row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-base">{reminderOn ? "🔔" : "🔕"}</span>
@@ -124,7 +159,6 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
           </button>
         </div>
 
-        {/* Date + time pickers — shown only when toggle is on */}
         {reminderOn && (
           <div className="grid grid-cols-2 gap-2 mt-2.5">
             <div>
@@ -132,8 +166,8 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
               <input
                 type="date"
                 className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-indigo-700/60 focus:border-indigo-500 outline-none"
-                value={edited.reminderDate ?? ""}
-                onChange={(e) => set("reminderDate", e.target.value)}
+                value={e.reminderDate ?? ""}
+                onChange={(ev) => set("reminderDate", ev.target.value)}
               />
             </div>
             <div>
@@ -141,8 +175,8 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
               <input
                 type="time"
                 className="w-full bg-zinc-900 text-white text-sm rounded-lg px-3 py-2 border border-indigo-700/60 focus:border-indigo-500 outline-none"
-                value={edited.reminderTime ?? ""}
-                onChange={(e) => set("reminderTime", e.target.value)}
+                value={e.reminderTime ?? ""}
+                onChange={(ev) => set("reminderTime", ev.target.value)}
               />
             </div>
           </div>
@@ -158,7 +192,7 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
           Annulla
         </button>
         <button
-          onClick={() => onConfirm(edited)}
+          onClick={() => onConfirm(e)}
           className="flex-1 py-2 rounded-xl text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
         >
           Salva su Notion

@@ -24,6 +24,19 @@ export type TipoAttivita = (typeof TIPI_ATTIVITA)[number];
 export const PRIORITA = ["🔴 Urgente", "🟡 Media", "🟢 Bassa"] as const;
 export type Priorita = (typeof PRIORITA)[number];
 
+// Canale (exact values from Notion DB)
+export const CANALE_OPTS = [
+  "📞 Telefono / WhatsApp",
+  "📨 Klaviyo",
+  "🛒 Shopify",
+  "📘 Meta Ads",
+  "🔍 Google Ads",
+  "🏠 Airbnb",
+  "📧 Email diretta",
+  "🌐 Sito web",
+] as const;
+export type Canale = (typeof CANALE_OPTS)[number];
+
 export const STATI_TASK = ["Not started", "In progress", "Done"] as const;
 export type StatoTask = (typeof STATI_TASK)[number];
 
