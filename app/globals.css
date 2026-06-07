@@ -37,41 +37,47 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); opaci
 /* ── Focus ring — none ─────────────────────────────────────────────────────── */
 * { outline: none; }
 
-/* ── Sphere logo — override zero-radius reset via class specificity ──────── */
+/* ── Sphere logo ─────────────────────────────────────────────────────────── */
 @keyframes rm-spin-y {
   from { transform: rotateY(0deg); }
   to   { transform: rotateY(360deg); }
 }
 
-/* Class selector (0,1,0) beats universal * (0,0,0) even with !important */
-.rm-sphere,
-.rm-sphere::before {
+/*
+ * Specificity fix: div.rm-sphere = (0,1,1) beats * = (0,0,0) even with
+ * !important. Class-only .rm-sphere = (0,1,0) had edge-case failures on
+ * Webkit/Safari when competing with the universal-selector !important reset.
+ */
+div.rm-sphere,
+div.rm-sphere::before {
   border-radius: 50% !important;
 }
 
-.rm-sphere {
+div.rm-sphere {
   position: relative;
   background: #000000;
   border: 2px solid #CCFF00;
   animation: rm-spin-y 8s linear infinite;
-  will-change: transform;
   flex-shrink: 0;
   user-select: none;
   cursor: default;
+  /* overflow visible so 3D rotation isn't clipped by ancestor overflow:hidden */
+  overflow: visible;
 }
 
 /* Light reflection overlay — bright top-left, dark bottom-right */
-.rm-sphere::before {
+div.rm-sphere::before {
   content: '';
   position: absolute;
   inset: 0;
+  border-radius: 50% !important;
   background:
     radial-gradient(circle at 32% 32%, rgba(204,255,0,0.14) 0%, transparent 52%),
     radial-gradient(circle at 68% 68%, rgba(0,0,0,0.42) 0%, transparent 52%);
   pointer-events: none;
 }
 
-.rm-sphere:hover {
+div.rm-sphere:hover {
   animation-duration: 16s;
 }
 

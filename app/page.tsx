@@ -326,8 +326,18 @@ export default function ChatPage() {
       <div className="flex items-center justify-center min-h-screen bg-black overflow-x-hidden px-4 md:px-6 lg:px-10 py-8">
         <div className="w-full max-w-full md:max-w-[600px] lg:max-w-[680px]">
 
-          {/* Logo */}
+          {/* Logo + sphere */}
           <div className="text-center mb-8 md:mb-10">
+            {/* Animated sphere — only in empty state */}
+            <div className="flex justify-center mb-5 md:mb-6">
+              <div style={{ perspective: "400px" }}>
+                <div className="rm-sphere w-14 h-14 md:w-20 md:h-20 flex items-center justify-center">
+                  <span className="text-[#CCFF00] font-black text-lg md:text-2xl leading-none" style={{ position: "relative", zIndex: 1 }}>
+                    RM
+                  </span>
+                </div>
+              </div>
+            </div>
             <h1 className="font-display text-5xl md:text-6xl lg:text-7xl tracking-display text-white leading-none">
               REACHMEDIA.IT
             </h1>
@@ -398,14 +408,6 @@ export default function ChatPage() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="shrink-0 flex items-center justify-between px-4 md:px-6 py-4 border-b border-[#1a1a1a]">
         <div className="flex items-center gap-3">
-          {/* 3D rotating sphere */}
-          <div style={{ perspective: "200px", flexShrink: 0 }}>
-            <div className="rm-sphere w-9 h-9 md:w-12 md:h-12 flex items-center justify-center">
-              <span className="text-[#CCFF00] font-black text-[13px] md:text-base leading-none" style={{ position: "relative", zIndex: 1 }}>
-                RM
-              </span>
-            </div>
-          </div>
           <h1 className="font-display text-2xl md:text-3xl tracking-display text-white hover:opacity-70 transition-opacity duration-200 leading-none">
             REACHMEDIA.IT
           </h1>
