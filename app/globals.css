@@ -88,6 +88,11 @@ div.rm-bubble-ai     { border-radius: 18px 18px 18px 4px !important; }        /*
 div.rm-input-box     { border-radius: 8px  !important; }                      /* input container */
 div.rm-card          { border-radius: 8px  !important; }                      /* task confirm card */
 
+/* ── Number input: hide browser spinners ────────────────────────────────── */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+
 /* ── Select: remove native arrow, add custom ─────────────────────────────── */
 .rm-select-arrow {
   -webkit-appearance: none;
