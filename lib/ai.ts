@@ -52,6 +52,7 @@ export async function parseIntent(userMessage: string): Promise<ParsedIntent> {
 
   const prompt = `Sei un assistente per l'agenzia di marketing reachmedia.it.
 Analizza il messaggio e determina l'INTENT e i DATI.
+Se il messaggio contiene più task o azioni, scegli SOLO la prima/principale. Rispondi sempre con UN SOLO oggetto JSON.
 
 Messaggio: "${userMessage}"
 Oggi: ${todayStr}  |  Mese corrente: ${currentMonthName()}  |  Anno corrente: ${currentYear()}
