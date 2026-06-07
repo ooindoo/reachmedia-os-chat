@@ -11,7 +11,7 @@ html, body {
   overflow-x: hidden;
 }
 body {
-  background: #000000;
+  background: #0a0a0a;
   color: #FFFFFF;
   font-family: var(--font-inter), system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -56,12 +56,11 @@ div.rm-sphere::before {
 div.rm-sphere {
   position: relative;
   background: #000000;
-  border: 2px solid #CCFF00;
+  border: 1px solid #CCFF00;
   animation: rm-spin-y 8s linear infinite;
   flex-shrink: 0;
   user-select: none;
   cursor: default;
-  /* overflow visible so 3D rotation isn't clipped by ancestor overflow:hidden */
   overflow: visible;
 }
 
@@ -77,9 +76,17 @@ div.rm-sphere::before {
   pointer-events: none;
 }
 
-div.rm-sphere:hover {
-  animation-duration: 16s;
-}
+/* ── Selective border-radius overrides ───────────────────────────────────────
+ * All use element + class specificity (0,1,1) to reliably beat
+ * the universal reset * { border-radius: 0 !important } (0,0,0).
+ * Everything else keeps border-radius: 0 as intended.
+ * ─────────────────────────────────────────────────────────────────────────── */
+button.rm-pill       { border-radius: 20px !important; }                      /* suggestion chips */
+button.rm-send       { border-radius: 8px  !important; }                      /* INVIA / → button */
+div.rm-bubble-user   { border-radius: 18px 18px 4px 18px !important; }        /* user bubble: flat bottom-right */
+div.rm-bubble-ai     { border-radius: 18px 18px 18px 4px !important; }        /* AI bubble:   flat bottom-left  */
+div.rm-input-box     { border-radius: 8px  !important; }                      /* input container */
+div.rm-card          { border-radius: 8px  !important; }                      /* task confirm card */
 
 /* ── Select: remove native arrow, add custom ─────────────────────────────── */
 .rm-select-arrow {

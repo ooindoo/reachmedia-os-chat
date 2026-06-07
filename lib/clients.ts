@@ -13,6 +13,25 @@ export const CLIENTS: Record<string, { id: string; name: string }> = {
 };
 export const CLIENT_NAMES = Object.keys(CLIENTS);
 
+// ── iStudios agency ────────────────────────────────────────────────────────────
+// These 4 clients are billed through the iStudios agency umbrella.
+// The card shows "Fattura a: iStudios" when any of these is selected.
+export const ISTUDIOS_CLIENTS = new Set([
+  "Opplant", "Sicura", "Shirò Pagani Boutique", "Stewart Dawson",
+]);
+
+// Grouped dropdown structure for the client select
+export const CLIENT_GROUPS: { group: string; clients: string[] }[] = [
+  {
+    group: "Diretti",
+    clients: ["Squale SA", "CappellettoShop", "Luxyt", "NOESI", "Markershop", "Giuseppe Toniolo Airbnb"],
+  },
+  {
+    group: "iStudios",
+    clients: ["Opplant", "Sicura", "Shirò Pagani Boutique", "Stewart Dawson"],
+  },
+];
+
 // ── Task ──────────────────────────────────────────────────────────────────────
 export const TIPI_ATTIVITA = [
   "📧 Newsletter", "🔄 Flow / Automation", "🛍 Shopify Dev",

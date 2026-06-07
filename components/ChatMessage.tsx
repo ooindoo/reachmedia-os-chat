@@ -30,7 +30,7 @@ export default function ChatMessage({
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="bg-rm-accent text-black font-bold text-sm py-3 px-3.5 md:py-[14px] md:px-[18px] max-w-[80%] md:max-w-[75%] break-words whitespace-pre-wrap leading-[1.5]">
+        <div className="rm-bubble-user bg-rm-accent text-black font-semibold text-sm py-3 px-[18px] max-w-[75%] break-words whitespace-pre-wrap leading-[1.55]">
           {message.content}
         </div>
       </div>
@@ -39,9 +39,9 @@ export default function ChatMessage({
 
   return (
     <div className="flex justify-start">
-      <div className="flex flex-col gap-2 max-w-full w-full">
+      <div className="flex flex-col gap-3 max-w-full w-full">
         {message.content && (
-          <div className="bg-[#111111] text-white text-sm py-3 px-3.5 md:py-[14px] md:px-[18px] max-w-[88%] md:max-w-[85%] break-words whitespace-pre-wrap leading-[1.5]">
+          <div className="rm-bubble-ai bg-[#111111] text-white text-sm py-3 px-[18px] max-w-[85%] break-words whitespace-pre-wrap leading-[1.55]">
             {message.content}
           </div>
         )}
