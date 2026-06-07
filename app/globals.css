@@ -88,6 +88,15 @@ div.rm-bubble-ai     { border-radius: 18px 18px 18px 4px !important; }        /*
 div.rm-input-box     { border-radius: 8px  !important; }                      /* input container */
 div.rm-card          { border-radius: 8px  !important; }                      /* task confirm card */
 
+/* ── Dark background on autofill (overrides browser yellow/white) ─────────── */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px #1a1a1a inset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff;
+}
+
 /* ── Number input: hide browser spinners ────────────────────────────────── */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

@@ -18,12 +18,24 @@ import { type ReactNode } from "react";
 import { CLIENT_GROUPS } from "@/lib/clients";
 
 // ── Shared class tokens ────────────────────────────────────────────────────────
-// Applied to every editable field wrapper or directly to native inputs
+// FW — for wrapper divs containing a hidden native element (date/time/select).
+// :hover fires on the wrapper because hover propagates up from the child element.
+// :focus-within fires when the hidden child receives focus (keyboard navigation).
 const FW =
   "flex-1 relative border-l-2 border-l-transparent " +
   "hover:bg-[#1a1a1a] hover:border-l-[#CCFF00] " +
   "focus-within:bg-[#1a1a1a] focus-within:border-l-[#CCFF00] " +
   "transition-all duration-150";
+
+// FI — for actual <input> elements (text, number).
+// bg-[#111111] as explicit base overrides browser's UA white default.
+// focus:ring-1 creates a 1px inset box-shadow in #CCFF00 — no layout shift.
+const FI =
+  "flex-1 bg-[#111111] text-white text-sm px-3 min-h-[44px] " +
+  "flex items-center cursor-text outline-none placeholder-[#444] leading-snug " +
+  "border-l-2 border-l-transparent transition-all duration-150 " +
+  "hover:bg-[#1a1a1a] hover:border-l-[#CCFF00] " +
+  "focus:bg-[#1a1a1a] focus:border-l-[#CCFF00] focus:ring-1 focus:ring-[#CCFF00]";
 
 export const CARD_LABEL =
   "w-[80px] shrink-0 text-[11px] text-[#555] " +
@@ -36,7 +48,7 @@ export const CARD_ROW =
 const MIN_ROW_H = "min-h-[44px]";
 
 // ── Text input ────────────────────────────────────────────────────────────────
-// Always visible — single click = instant focus, no toggle needed.
+// bg-[#111111] as base → never white. focus: dark bg + ring + left accent.
 // font-size 16px prevents iOS auto-zoom.
 export function EText({
   value, placeholder = "—", onChange,
@@ -49,10 +61,7 @@ export function EText({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className={
-        `${FW} flex-1 text-white text-sm px-3 ${MIN_ROW_H} ` +
-        `flex items-center cursor-text outline-none placeholder-[#444] leading-snug`
-      }
+      className={FI}
       style={{ fontSize: "16px" }}
     />
   );
@@ -72,19 +81,15 @@ export function ENumber({
       min={min}
       inputMode="decimal"
       onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-      className={
-        `${FW} flex-1 text-white text-sm px-3 ${MIN_ROW_H} ` +
-        `flex items-center cursor-text outline-none placeholder-[#444] leading-snug`
-      }
+      className={FI}
       style={{ fontSize: "16px" }}
     />
   );
 }
 
 // ── Date picker ───────────────────────────────────────────────────────────────
-// The hidden <input type="date"> sits absolute inset-0, so native pickers
-// open on the very first tap — no JS needed.
-// 📅 emoji is pointer-events-none → click passes through to the date input.
+// Entire field is clickable — hidden input covers full div, opens native picker.
+// No emoji icon: the whole row is the click target.
 export function EDate({
   value, onChange,
 }: {
@@ -92,14 +97,11 @@ export function EDate({
 }) {
   return (
     <div className={`${FW} flex-1 cursor-pointer`}>
-      {/* Visible row */}
-      <div className={`flex items-center justify-between px-3 ${MIN_ROW_H} pointer-events-none select-none gap-2`}>
+      <div className={`px-3 ${MIN_ROW_H} flex items-center pointer-events-none select-none`}>
         <span className="text-sm text-white" style={{ fontSize: "16px" }}>
           {value || <span className="text-[#444]">—</span>}
         </span>
-        <span className="text-[#444] text-[14px] shrink-0">📅</span>
       </div>
-      {/* Native date input — transparent, full coverage */}
       <input
         type="date"
         value={value}
@@ -112,6 +114,7 @@ export function EDate({
 }
 
 // ── Time picker ───────────────────────────────────────────────────────────────
+// Same pattern: full-row click target, no icon.
 export function ETime({
   value, onChange,
 }: {
@@ -119,11 +122,10 @@ export function ETime({
 }) {
   return (
     <div className={`${FW} flex-1 cursor-pointer`}>
-      <div className={`flex items-center justify-between px-3 ${MIN_ROW_H} pointer-events-none select-none gap-2`}>
+      <div className={`px-3 ${MIN_ROW_H} flex items-center pointer-events-none select-none`}>
         <span className="text-sm text-white" style={{ fontSize: "16px" }}>
           {value || <span className="text-[#444]">—</span>}
         </span>
-        <span className="text-[#444] text-[14px] shrink-0">🕐</span>
       </div>
       <input
         type="time"
@@ -291,7 +293,7 @@ export function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
-// ── Notion "N" icon — minimal stroke ─────────────────────────────────────────
+// ── Notion icon — exact SVG from spec ────────────────────────────────────────
 export function NotionIcon() {
   return (
     <svg
@@ -299,40 +301,36 @@ export function NotionIcon() {
       viewBox="0 0 14 14"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      strokeWidth="1.5"
       style={{ flexShrink: 0 }}
     >
-      {/* Stylized "N" */}
-      <path d="M2 2v10M2 2l9 10M11 2v10" />
+      <path d="M2 2h4l6 10H8L2 2z" />
+      <path d="M2 2v10M8 12V2" />
     </svg>
   );
 }
 
-// ── Calendar icon — minimal stroke with "31" ──────────────────────────────────
+// ── Calendar icon — exact SVG from spec ──────────────────────────────────────
 export function CalendarIcon() {
   return (
     <svg
       width="14" height="14"
-      viewBox="0 0 16 16"
+      viewBox="0 0 14 14"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.4"
-      strokeLinecap="round"
+      strokeWidth="1.5"
       style={{ flexShrink: 0 }}
     >
-      <rect x="1" y="2.5" width="14" height="12" />
-      <line x1="1" y1="6.5" x2="15" y2="6.5" />
-      <line x1="5" y1="0.5" x2="5" y2="4.5" />
-      <line x1="11" y1="0.5" x2="11" y2="4.5" />
-      <text x="8" y="13" textAnchor="middle" fontSize="4.5" fontWeight="700" fill="currentColor" stroke="none">31</text>
+      <rect x="1" y="3" width="12" height="10" rx="1" />
+      <path d="M1 7h12M4 1v4M10 1v4" />
     </svg>
   );
 }
 
 // ── Save button ───────────────────────────────────────────────────────────────
-// Always shows NotionIcon. CalendarIcon shown only when withCalendar=true.
+// Always shows NotionIcon. CalendarIcon shown only when withCalendar=true
+// (task card with reminder). Invoice and TimeLog never show the calendar icon.
+// gap-[6px] between icon(s) and label as per spec.
 export function SaveBtn({
   onClick, label = "SALVA", withCalendar = false,
 }: {
@@ -341,7 +339,7 @@ export function SaveBtn({
   return (
     <button
       onClick={onClick}
-      className="w-full py-3 bg-[#CCFF00] text-black text-[11px] font-black uppercase tracking-[0.1em] hover:bg-white transition-colors duration-150 flex items-center justify-center gap-2 cursor-pointer min-h-[48px]"
+      className="w-full py-3 bg-[#CCFF00] text-black text-[11px] font-black uppercase tracking-[0.1em] hover:bg-white transition-colors duration-150 flex items-center justify-center gap-[6px] cursor-pointer min-h-[48px]"
     >
       <NotionIcon />
       {withCalendar && <CalendarIcon />}
