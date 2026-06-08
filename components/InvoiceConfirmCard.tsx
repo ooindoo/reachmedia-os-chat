@@ -105,9 +105,27 @@ export default function InvoiceConfirmCard({ invoice, onConfirm, onCancel }: Pro
           <EDate value={e.dataEmissione} onChange={(v) => set("dataEmissione", v)} />
         </div>
 
-        <div className={`flex items-start gap-2 pb-4`}>
+        <div className={CARD_ROW}>
           <span className={CARD_LABEL}>SCADENZA</span>
           <EDate value={e.dataScadenza} onChange={(v) => set("dataScadenza", v)} />
+        </div>
+
+        <div className={CARD_ROW}>
+          <span className={CARD_LABEL}>NOTE</span>
+          <EText
+            value={e.note ?? ""}
+            placeholder="note libere…"
+            onChange={(v) => set("note", v || undefined)}
+          />
+        </div>
+
+        <div className={`flex items-start gap-2 pb-4`}>
+          <span className={CARD_LABEL}>GMAIL</span>
+          <EText
+            value={e.linkGmail ?? ""}
+            placeholder="link email…"
+            onChange={(v) => set("linkGmail", v || undefined)}
+          />
         </div>
 
       </div>

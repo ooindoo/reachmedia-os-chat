@@ -28,6 +28,9 @@ export interface TaskData {
   reminderTime?: string;
   // Google Calendar reminder option — NOT saved to Notion
   gcalReminder?: "none" | "same_day" | "1_day" | "2_days" | "1_week";
+  // Optional extra fields
+  note?: string;
+  linkGmail?: string;
 }
 
 export async function createNotionTask(task: TaskData): Promise<NotionPage> {
@@ -55,6 +58,8 @@ export async function createNotionTask(task: TaskData): Promise<NotionPage> {
   if (task.canale)              properties["Canale"]               = { select: { name: task.canale } };
   if (task.bloccatoDa)          properties["Bloccato da"]          = { select: { name: task.bloccatoDa } };
   if (task.approvazioneCliente) properties["Approvazione cliente"] = { select: { name: task.approvazioneCliente } };
+  if (task.note?.trim())        properties["Note"]                 = { rich_text: [{ text: { content: task.note.trim() } }] };
+  if (task.linkGmail?.trim())   properties["Link Gmail"]           = { url: task.linkGmail.trim() };
 
   console.log("[Notion] Full Cliente property:", JSON.stringify(properties["Cliente"]));
 

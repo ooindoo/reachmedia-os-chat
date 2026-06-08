@@ -15,6 +15,9 @@ export interface TimeLogData {
   tipoSessione: TipoSessione;
   energia: Energia;
   fatturabile: Fatturabile;
+  // Optional extra fields
+  note?: string;
+  linkGmail?: string;
 }
 
 export async function createNotionTimeLog(timelog: TimeLogData): Promise<AnyPage> {
@@ -26,16 +29,22 @@ export async function createNotionTimeLog(timelog: TimeLogData): Promise<AnyPage
     ? `${timelog.data}T${timelog.ora}:00.000+01:00`
     : timelog.data;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const properties: Record<string, any> = {
+    "Descrizione sessione": { title: [{ text: { content: timelog.descrizione } }] },
+    Cliente: { relation: clientInfo ? [{ id: toNotionId(clientInfo.id) }] : [] },
+    "Ore lavorate": { number: timelog.oreLavorate },
+    Data: { date: { start: dateStart } },
+    "Tipo sessione": { select: { name: timelog.tipoSessione } },
+    Energia: { select: { name: timelog.energia } },
+    Fatturabile: { select: { name: timelog.fatturabile } },
+  };
+
+  if (timelog.note?.trim())      properties["Note"]       = { rich_text: [{ text: { content: timelog.note.trim() } }] };
+  if (timelog.linkGmail?.trim()) properties["Link Gmail"] = { url: timelog.linkGmail.trim() };
+
   return notion.pages.create({
     parent: { database_id: process.env.NOTION_TIMELOG_DB! },
-    properties: {
-      "Descrizione sessione": { title: [{ text: { content: timelog.descrizione } }] },
-      Cliente: { relation: clientInfo ? [{ id: toNotionId(clientInfo.id) }] : [] },
-      "Ore lavorate": { number: timelog.oreLavorate },
-      Data: { date: { start: dateStart } },
-      "Tipo sessione": { select: { name: timelog.tipoSessione } },
-      Energia: { select: { name: timelog.energia } },
-      Fatturabile: { select: { name: timelog.fatturabile } },
-    },
+    properties,
   }) as AnyPage;
 }
