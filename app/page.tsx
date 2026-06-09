@@ -414,6 +414,29 @@ export default function ChatPage() {
     try {
       const res = await fetch("/api/update-task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taskId: task.id, updates }) });
       const data = await res.json();
+
+      // Page ID from context is stale — fall back to fuzzy search
+      if (res.status === 404 && data.error === "NOT_FOUND") {
+        patchMsg(msgId, { content: "ID non aggiornato, cerco la task…" });
+        const sq = encodeURIComponent(task.titolo || "");
+        const cl = encodeURIComponent(task.cliente || "");
+        const searchRes = await fetch(`/api/search-tasks?q=${sq}&cliente=${cl}`);
+        const searchData = await searchRes.json();
+        if (!searchRes.ok || !searchData.tasks) {
+          patchMsg(msgId, { content: `❌ ${searchData.error ?? "Errore ricerca"}` });
+          return;
+        }
+        const tasks: TaskSearchResult[] = searchData.tasks;
+        if (tasks.length === 0) {
+          patchMsg(msgId, { content: `Task non trovata — prova con il titolo esatto in Notion.` });
+        } else if (tasks.length === 1) {
+          patchMsg(msgId, { content: "Task trovata — conferma le modifiche:", pending: { type: "confirm_update", task: tasks[0], updates } });
+        } else {
+          patchMsg(msgId, { content: `${tasks.length} task trovate — scegli quale aggiornare:`, pending: { type: "select_task", tasks, updates } });
+        }
+        return;
+      }
+
       if (!res.ok || !data.success) { patchMsg(msgId, { content: `❌ ${data.error ?? "Errore"}` }); return; }
       patchMsg(msgId, { content: `✓ Task "${task.titolo}" aggiornata`, notionUrl: data.url });
     } catch { patchMsg(msgId, { content: "❌ Errore di rete." }); }
