@@ -1,6 +1,46 @@
 "use client";
 
 import type { Message } from "@/app/page";
+
+// ── Notion deep-link with HTTPS fallback ──────────────────────────────────────
+// Converts https://www.notion.so/… → notion://www.notion.so/…
+// If Notion app is installed the OS intercepts the custom scheme and opens the
+// app (window loses focus → we cancel the fallback timer).
+// If not installed nothing happens for 500ms → we open the https:// URL instead.
+function toDeepLink(httpsUrl: string): string {
+  return httpsUrl.replace(/^https:\/\//, "notion://");
+}
+
+function openNotion(httpsUrl: string) {
+  const deepLink = toDeepLink(httpsUrl);
+
+  // Cancel fallback when app intercepts the link (page loses focus)
+  let cancelled = false;
+  const onBlur = () => { cancelled = true; };
+  window.addEventListener("blur", onBlur, { once: true });
+
+  window.location.href = deepLink;
+
+  setTimeout(() => {
+    window.removeEventListener("blur", onBlur);
+    if (!cancelled) {
+      // App didn't open — open in browser as fallback
+      window.open(httpsUrl, "_blank", "noopener,noreferrer");
+    }
+  }, 500);
+}
+
+function NotionLink({ url }: { url: string }) {
+  return (
+    <button
+      onClick={() => openNotion(url)}
+      className="inline-flex items-center gap-1.5 text-rm-accent text-[11px] font-semibold uppercase tracking-[0.1em] hover:opacity-70 transition-opacity cursor-pointer bg-transparent border-0 p-0"
+    >
+      <span>→</span>
+      <span>APRI SU NOTION</span>
+    </button>
+  );
+}
 import TaskConfirmCard from "./TaskConfirmCard";
 import InvoiceConfirmCard from "./InvoiceConfirmCard";
 import TimeLogConfirmCard from "./TimeLogConfirmCard";
@@ -75,17 +115,7 @@ export default function ChatMessage({
           <InvoiceUpdateCard invoice={message.pending.invoice} updates={message.pending.updates} onConfirm={onConfirmInvoiceUpdate} onCancel={onCancel} />
         )}
 
-        {message.notionUrl && (
-          <a
-            href={message.notionUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-rm-accent text-[11px] font-semibold uppercase tracking-[0.1em] no-underline hover:opacity-70 transition-opacity"
-          >
-            <span>→</span>
-            <span>APRI SU NOTION</span>
-          </a>
-        )}
+        {message.notionUrl && <NotionLink url={message.notionUrl} />}
       </div>
     </div>
   );
