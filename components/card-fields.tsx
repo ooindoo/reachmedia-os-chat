@@ -98,7 +98,7 @@ export function EDate({
   return (
     <div className={`${FW} flex-1 cursor-pointer`}>
       <div className={`px-3 ${MIN_ROW_H} flex items-center pointer-events-none select-none`}>
-        <span className="text-sm text-white" style={{ fontSize: "16px" }}>
+        <span className="text-white" style={{ fontSize: "16px" }}>
           {value || <span className="text-[#444]">—</span>}
         </span>
       </div>
@@ -114,7 +114,6 @@ export function EDate({
 }
 
 // ── Time picker ───────────────────────────────────────────────────────────────
-// Same pattern: full-row click target, no icon.
 export function ETime({
   value, onChange,
 }: {
@@ -123,7 +122,7 @@ export function ETime({
   return (
     <div className={`${FW} flex-1 cursor-pointer`}>
       <div className={`px-3 ${MIN_ROW_H} flex items-center pointer-events-none select-none`}>
-        <span className="text-sm text-white" style={{ fontSize: "16px" }}>
+        <span className="text-white" style={{ fontSize: "16px" }}>
           {value || <span className="text-[#444]">—</span>}
         </span>
       </div>
@@ -134,6 +133,26 @@ export function ETime({
         className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
         style={{ colorScheme: "dark", fontSize: "16px" }}
       />
+    </div>
+  );
+}
+
+// ── Date + Time side by side ──────────────────────────────────────────────────
+// Date field takes remaining space; time field is fixed-width (88px).
+// Both use the overlay pattern so the full area is clickable on first tap.
+export function EDatetime({
+  dateValue, timeValue = "", onDateChange, onTimeChange,
+}: {
+  dateValue: string; timeValue?: string;
+  onDateChange: (v: string) => void; onTimeChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex-1 flex gap-1 min-w-0">
+      <EDate value={dateValue} onChange={onDateChange} />
+      {/* Fixed-width wrapper overrides ETime's flex-1 */}
+      <div style={{ width: "88px", flexShrink: 0 }}>
+        <ETime value={timeValue} onChange={onTimeChange} />
+      </div>
     </div>
   );
 }

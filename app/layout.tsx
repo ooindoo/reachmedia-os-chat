@@ -18,9 +18,9 @@ const bebas = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "REACHMEDIA OS",
+  title: "chat.reachmedia.it | Ardit N",
   description: "Task · Fatture · Time Log per reachmedia.it",
-  manifest: "/manifest.json",
+  manifest: "/manifest.json?v=3",
   icons: {
     icon: { url: "/favicon.svg", type: "image/svg+xml" },
     // apple-touch-icon and icon.png auto-served from app/apple-icon.tsx + app/icon.tsx

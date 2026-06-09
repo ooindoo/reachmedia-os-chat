@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CLIENT_NAMES, TIPI_SESSIONE, ENERGIE, FATTURABILE_OPTS } from "@/lib/clients";
 import type { TimeLogData } from "@/lib/timelog";
 import {
-  EText, ENumber, EDate, ETime, ESelect, ToggleBtn,
+  EText, ENumber, EDate, ESelect, ToggleBtn,
   CardWrap, CardHeader, SectionLabel, SaveBtn, CancelBtn,
   CARD_LABEL, CARD_ROW,
 } from "./card-fields";
@@ -68,11 +68,6 @@ export default function TimeLogConfirmCard({ timelog, onConfirm, onCancel }: Pro
         <div className={CARD_ROW}>
           <span className={CARD_LABEL}>DATA</span>
           <EDate value={e.data} onChange={(v) => set("data", v)} />
-        </div>
-
-        <div className={CARD_ROW}>
-          <span className={CARD_LABEL}>ORA INIZIO</span>
-          <ETime value={e.ora} onChange={(v) => set("ora", v)} />
         </div>
 
         <div className={CARD_ROW}>

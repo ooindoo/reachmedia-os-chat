@@ -1,6 +1,7 @@
 import { Client } from "@notionhq/client";
 import { CLIENTS } from "./clients";
 import { toNotionId } from "./notion";
+import { romeOffset } from "./tz";
 import type { TipoSessione, Energia, Fatturabile } from "./clients";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,9 +25,9 @@ export async function createNotionTimeLog(timelog: TimeLogData): Promise<AnyPage
   const notion = new Client({ auth: process.env.NOTION_TOKEN });
   const clientInfo = CLIENTS[timelog.cliente];
 
-  // Build date value: datetime if ora is set, else date-only
+  // Build date value: datetime (with correct Rome offset) if ora is set, else date-only
   const dateStart = timelog.ora
-    ? `${timelog.data}T${timelog.ora}:00.000+01:00`
+    ? `${timelog.data}T${timelog.ora}:00.000${romeOffset(timelog.data)}`
     : timelog.data;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

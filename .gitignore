@@ -31,6 +31,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Google OAuth client secrets — never commit
+client_secret*.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

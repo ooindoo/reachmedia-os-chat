@@ -1,5 +1,6 @@
 import { Client } from "@notionhq/client";
 import { CLIENTS } from "./clients";
+import { notionDatetime } from "./tz";
 import type { TipoAttivita, Priorita, Canale, BloccatoDa, ApprovazioneCliente } from "./clients";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,7 +50,15 @@ export async function createNotionTask(task: TaskData): Promise<NotionPage> {
   const properties: Record<string, any> = {
     Task:            { title: [{ text: { content: task.titolo } }] },
     Cliente:         { relation: clienteRelation },
-    Deadline:        { date: { start: task.deadline } },
+    // If the user specified a time (reminderTime), save as full datetime with correct
+    // Rome offset (+02:00 CEST summer / +01:00 CET winter). Otherwise date-only.
+    Deadline: {
+      date: {
+        start: task.reminderTime
+          ? notionDatetime(task.deadline, task.reminderTime)
+          : task.deadline,
+      },
+    },
     "Priorità":      { select: { name: task.priorita } },
     "Tipo attività": { select: { name: task.tipoAttivita } },
     Stato:           { status: { name: "Not started" } },

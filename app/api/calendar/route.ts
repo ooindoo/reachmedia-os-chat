@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { shiftDate } from "@/lib/tz";
 import type { TaskData } from "@/lib/notion";
 
-// Minutes before the event start (09:00 on deadline day) that the popup fires
-function reminderMinutes(option: string): number | null {
+// Days to subtract from the deadline to get the event date.
+// The event itself is the reminder — created at 09:00 on the offset day.
+function reminderDayOffset(option: string): number | null {
   switch (option) {
-    case "same_day": return 0;              // fires at 09:00 on event day
-    case "1_day":    return 24 * 60;        // fires at 09:00 one day before
-    case "2_days":   return 2 * 24 * 60;    // fires at 09:00 two days before
-    case "1_week":   return 7 * 24 * 60;    // fires at 09:00 one week before
+    case "same_day": return 0;   // event on deadline day at 09:00
+    case "1_day":    return -1;  // event 1 day before deadline at 09:00
+    case "2_days":   return -2;  // event 2 days before deadline at 09:00
+    case "1_week":   return -7;  // event 7 days before deadline at 09:00
     default:         return null;
   }
 }
+
 
 export async function POST(req: NextRequest) {
   // Get session server-side — access token never leaves the server
@@ -32,23 +35,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Deadline mancante" }, { status: 400 });
   }
 
-  const mins = reminderMinutes(gcalReminder);
+  const offset = reminderDayOffset(gcalReminder);
+  if (offset === null) {
+    return NextResponse.json({ error: "Opzione reminder non valida" }, { status: 400 });
+  }
 
-  // Build a timed event at 09:00 on the deadline day (Europe/Rome)
+  // The event date is the deadline shifted by the offset (e.g. -1 = day before).
+  // Event runs 09:00–10:00 on that day and fires a popup at event start.
+  const eventDate = shiftDate(task.deadline, offset);
+
   const event = {
-    summary: task.titolo,
-    description: `Cliente: ${task.cliente || "—"} | Tipo: ${task.tipoAttivita || "—"} | reachmedia OS`,
+    summary: `⚑ ${task.titolo}`,
+    description: `Cliente: ${task.cliente || "—"} | Tipo: ${task.tipoAttivita || "—"} | Deadline: ${task.deadline} | reachmedia OS`,
     start: {
-      dateTime: `${task.deadline}T09:00:00`,
+      dateTime: `${eventDate}T09:00:00`,
       timeZone: "Europe/Rome",
     },
     end: {
-      dateTime: `${task.deadline}T10:00:00`,
+      dateTime: `${eventDate}T10:00:00`,
       timeZone: "Europe/Rome",
     },
     reminders: {
       useDefault: false,
-      overrides: mins !== null ? [{ method: "popup", minutes: mins }] : [],
+      overrides: [{ method: "popup", minutes: 0 }], // popup fires at 09:00 on event day
     },
   };
 

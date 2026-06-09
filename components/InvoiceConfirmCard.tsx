@@ -6,6 +6,7 @@ import {
   STATI_PAGAMENTO, METODI_PAGAMENTO, TIPI_DOCUMENTO,
 } from "@/lib/clients";
 import type { InvoiceData } from "@/lib/invoice";
+import { todayRome, shiftDate } from "@/lib/tz";
 import {
   EText, ENumber, EDate, ESelect, EDualSelect,
   CardWrap, CardHeader, SaveBtn, CancelBtn,
@@ -19,7 +20,13 @@ interface Props {
 }
 
 export default function InvoiceConfirmCard({ invoice, onConfirm, onCancel }: Props) {
-  const [e, setE] = useState<InvoiceData>({ ...invoice });
+  const today = todayRome();
+  const [e, setE] = useState<InvoiceData>({
+    ...invoice,
+    // Ensure dates always have a default so the picker shows something useful
+    dataEmissione: invoice.dataEmissione || today,
+    dataScadenza:  invoice.dataScadenza  || shiftDate(invoice.dataEmissione || today, 30),
+  });
   const set = <K extends keyof InvoiceData>(k: K, v: InvoiceData[K]) =>
     setE((p) => ({ ...p, [k]: v }));
 

@@ -14,43 +14,39 @@ import type { TaskData } from "./notion";
 import type { InvoiceData } from "./invoice";
 import type { TimeLogData } from "./timelog";
 import type { TaskUpdate } from "./update-task";
+import type { InvoiceUpdate } from "./invoice-update";
+import { todayRome, currentMonthRome, currentYearRome, nextWeekdayRome, shiftDate } from "./tz";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const today = () => new Date().toISOString().split("T")[0];
-const currentMonthName = (): Mese => MESI[new Date().getMonth()];
-const currentYear = (): Anno => String(new Date().getFullYear()) as Anno;
+// All date helpers use Rome timezone so the server (UTC) gives the right "today".
+const today = () => todayRome();
+const currentMonthName = (): Mese => MESI[currentMonthRome()];
+const currentYear = (): Anno => String(currentYearRome()) as Anno;
 
-function nextWeekday(dayName: string, fromDate = new Date()): string {
-  const map: Record<string, number> = {
-    lunedì: 1, martedì: 2, mercoledì: 3, giovedì: 4,
-    venerdì: 5, sabato: 6, domenica: 0,
-  };
-  const target = map[dayName.toLowerCase()];
-  if (target === undefined) return today();
-  let diff = target - fromDate.getDay();
-  if (diff <= 0) diff += 7;
-  const result = new Date(fromDate);
-  result.setDate(fromDate.getDate() + diff);
-  return result.toISOString().split("T")[0];
+function nextWeekday(dayName: string): string {
+  return nextWeekdayRome(dayName);
 }
 
 function addDays(dateStr: string, n: number): string {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() + n);
-  return d.toISOString().split("T")[0];
+  return shiftDate(dateStr, n);
 }
 
 export type ParsedIntent =
   | { intent: "create_task"; data: TaskData }
   | { intent: "create_invoice"; data: InvoiceData }
   | { intent: "create_timelog"; data: TimeLogData }
-  | { intent: "update_task"; searchQuery: string; cliente: string; updates: TaskUpdate };
+  | { intent: "update_task"; notionPageId?: string; titolo?: string; searchQuery: string; cliente: string; updates: TaskUpdate }
+  | { intent: "update_invoice"; notionPageId?: string; descrizione?: string; statoAttuale?: string; searchQuery: string; cliente: string; updates: InvoiceUpdate };
 
-export async function parseIntent(userMessage: string): Promise<ParsedIntent> {
+export async function parseIntent(userMessage: string, context?: string): Promise<ParsedIntent> {
   const todayStr = today();
 
-  const prompt = `Sei un assistente per l'agenzia di marketing reachmedia.it.
+  const contextBlock = context
+    ? `${context}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`
+    : "";
+
+  const prompt = `${contextBlock}Sei un assistente per l'agenzia di marketing reachmedia.it.
 Analizza il messaggio e determina l'INTENT e i DATI.
 Se il messaggio contiene più task o azioni, scegli SOLO la prima/principale. Rispondi sempre con UN SOLO oggetto JSON.
 
@@ -61,9 +57,10 @@ Clienti: ${CLIENT_NAMES.join(", ")}
 
 ━━━ INTENTS ━━━
 1. create_task   → nuova task da creare. DEFAULT quando il messaggio descrive qualcosa da fare (es. "chiama X", "prepara Y", "newsletter X per lunedì", "fix bug", "call con X"). Se non c'è un verbo esplicito di aggiornamento → create_task.
-2. create_invoice → fattura/ricevuta/proforma (parole chiave: fattura, ricevuta, proforma, €, euro, importo, pagata, bonifico, emessa)
+2. create_invoice → fattura/ricevuta/proforma (parole chiave: fattura, ricevuta, proforma, €, euro, importo, bonifico, emessa)
 3. create_timelog → registra ore lavorate (parole chiave: ho lavorato, ore su, ore per, sessione, traccia ore, log ore, lavorato X ore)
 4. update_task   → aggiorna task GIÀ ESISTENTE. SOLO se il messaggio contiene ESPLICITAMENTE uno di questi verbi di aggiornamento: "segna", "segna come", "metti", "aggiorna", "fatto", "completato", "done", "è bloccata", "bloccato", "approvato", "cambia stato", "sposta", "è urgente" (riferito a task esistente). "chiama X entro Y", "prepara X", "newsletter X" SENZA verbi di aggiornamento → SEMPRE create_task, MAI update_task.
+5. update_invoice → aggiorna FATTURA GIÀ ESISTENTE. SOLO per: "fattura [cliente] pagata", "segna pagata", "metti emessa", "è stata pagata", "pagato [cliente]", "fattura pagata". Se il messaggio descrive una nuova fattura (importo, periodo) → create_invoice.
 
 Rispondi SOLO con JSON valido (nessun testo extra).
 
@@ -117,6 +114,8 @@ create_timelog → {
 update_task → {
   "intent":"update_task",
   "data":{
+    "notionPageId":"ID esatto dalla riga corrispondente in TASK APERTE (se trovato nel contesto), altrimenti ''",
+    "titolo":"titolo esatto dalla riga corrispondente nel contesto (se trovato), altrimenti ''",
     "searchQuery":"1-2 parole chiave del TITOLO task (es. 'newsletter', 'call', 'Squale', non frasi come 'la call con')",
     "cliente":"nome cliente dalla lista o ''",
     "updates":{
@@ -130,6 +129,25 @@ update_task → {
     }
   }
 }
+
+update_invoice → {
+  "intent":"update_invoice",
+  "data":{
+    "notionPageId":"ID esatto dalla riga corrispondente in FATTURE IN SOSPESO (se trovato nel contesto), altrimenti ''",
+    "descrizione":"descrizione esatta dal contesto (se trovata), altrimenti ''",
+    "statoAttuale":"stato pagamento attuale dal contesto (se trovato), altrimenti ''",
+    "searchQuery":"1-2 parole chiave della descrizione fattura",
+    "cliente":"nome cliente dalla lista o ''",
+    "updates":{
+      "statoPagamento":"${STATI_PAGAMENTO.join("|")}"
+    }
+  }
+}
+
+━━━ SE HAI IL CONTESTO NOTION ━━━
+- update_task: cerca in "TASK APERTE" la riga che corrisponde meglio al messaggio (per titolo e/o cliente). Se trovi corrispondenza, usa il suo ID come notionPageId e il suo titolo come titolo.
+- update_invoice: cerca in "FATTURE IN SOSPESO" la riga che corrisponde meglio (per descrizione e/o cliente). Se trovi corrispondenza, usa il suo ID come notionPageId, la sua descrizione e il suo stato attuale.
+- Se trovi più corrispondenze, scegli quella con titolo/descrizione più simile o con il cliente corrispondente.
 
 ━━━ REGOLE GENERALI ━━━
 - DEADLINE — REGOLA FONDAMENTALE:
@@ -207,10 +225,6 @@ DEFAULTS FISSI (sempre questi valori, non chiedere):
   if (parsed.intent === "create_task") {
     let deadline = parsed.data.deadline || todayDate;
 
-    // Only apply weekday-name fallback if:
-    // 1. The message contains a relative day name (lunedì, venerdì, etc.)
-    // 2. AND the AI returned today's date (meaning it couldn't parse a specific date)
-    // This avoids overwriting explicit dates like "6 giugno" → "2026-06-06"
     const hasExplicitDate = /\b([1-9]|[12]\d|3[01])\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\b/i.test(userMessage)
       || /\b(entro\s+il\s+\d{1,2}|\d{1,2}[\/\-]\d{1,2})\b/i.test(userMessage);
 
@@ -235,7 +249,6 @@ DEFAULTS FISSI (sempre questi valori, non chiedere):
           ? (parsed.data.canale as Canale) : undefined,
         bloccatoDa: "➖ Non bloccato" as const,
         approvazioneCliente: "➖ Non necessaria" as const,
-        // Pre-fill reminder if time was mentioned in the message
         reminderDate: parsed.data.reminderTime ? deadline : "",
         reminderTime: typeof parsed.data.reminderTime === "string" ? parsed.data.reminderTime : "",
       },
@@ -300,6 +313,26 @@ DEFAULTS FISSI (sempre questi valori, non chiedere):
     if (raw.note && raw.note !== "ometti")         updates.note = raw.note;
     return {
       intent: "update_task",
+      notionPageId: parsed.data.notionPageId || undefined,
+      titolo: parsed.data.titolo || undefined,
+      searchQuery: parsed.data.searchQuery || "",
+      cliente: parsed.data.cliente || "",
+      updates,
+    };
+  }
+
+  // ── update_invoice ───────────────────────────────────────────────────────────
+  if (parsed.intent === "update_invoice") {
+    const raw = parsed.data.updates || {};
+    const updates: InvoiceUpdate = {};
+    if (raw.statoPagamento && (STATI_PAGAMENTO as readonly string[]).includes(raw.statoPagamento)) {
+      updates.statoPagamento = raw.statoPagamento;
+    }
+    return {
+      intent: "update_invoice",
+      notionPageId: parsed.data.notionPageId || undefined,
+      descrizione: parsed.data.descrizione || undefined,
+      statoAttuale: parsed.data.statoAttuale || undefined,
       searchQuery: parsed.data.searchQuery || "",
       cliente: parsed.data.cliente || "",
       updates,

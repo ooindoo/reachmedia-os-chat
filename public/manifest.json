@@ -1,6 +1,6 @@
 {
-  "name": "reachmedia OS",
-  "short_name": "RM OS",
+  "name": "chat.reachmedia.it",
+  "short_name": "chat.rm",
   "description": "Task · Fatture · Time Log per reachmedia.it",
   "start_url": "/",
   "display": "standalone",

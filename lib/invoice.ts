@@ -1,6 +1,7 @@
 import { Client } from "@notionhq/client";
 import { CLIENTS } from "./clients";
 import { toNotionId } from "./notion";
+import { notionDatetime } from "./tz";
 import type { Mese, Anno, StatoPagamento, MetodoPagamento, TipoDocumento } from "./clients";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -15,8 +16,10 @@ export interface InvoiceData {
   statoPagamento: StatoPagamento;
   metodoPagamento: MetodoPagamento;
   tipoDocumento: TipoDocumento;
-  dataEmissione: string;  // YYYY-MM-DD
-  dataScadenza: string;   // YYYY-MM-DD
+  dataEmissione: string;     // YYYY-MM-DD
+  dataScadenza: string;      // YYYY-MM-DD
+  dataEmissioneTime?: string; // HH:MM optional
+  dataScadenzaTime?: string;  // HH:MM optional
   // Optional extra fields
   note?: string;
   linkGmail?: string;
@@ -36,8 +39,20 @@ export async function createNotionInvoice(invoice: InvoiceData): Promise<AnyPage
     "Stato pagamento": { select: { name: invoice.statoPagamento } },
     "Metodo pagamento": { select: { name: invoice.metodoPagamento } },
     "Tipo documento": { select: { name: invoice.tipoDocumento } },
-    "Data emissione": { date: { start: invoice.dataEmissione } },
-    "Data scadenza pagamento": { date: { start: invoice.dataScadenza } },
+    "Data emissione": {
+      date: {
+        start: invoice.dataEmissioneTime
+          ? notionDatetime(invoice.dataEmissione, invoice.dataEmissioneTime)
+          : invoice.dataEmissione,
+      },
+    },
+    "Data scadenza pagamento": {
+      date: {
+        start: invoice.dataScadenzaTime
+          ? notionDatetime(invoice.dataScadenza, invoice.dataScadenzaTime)
+          : invoice.dataScadenza,
+      },
+    },
   };
 
   if (invoice.note?.trim())      properties["Note"]       = { rich_text: [{ text: { content: invoice.note.trim() } }] };

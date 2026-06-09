@@ -7,6 +7,7 @@ import type { TaskData } from "@/lib/notion";
 import type { InvoiceData } from "@/lib/invoice";
 import type { TimeLogData } from "@/lib/timelog";
 import type { TaskSearchResult, TaskUpdate } from "@/lib/update-task";
+import type { InvoiceSearchResult, InvoiceUpdate } from "@/lib/invoice-update";
 import { saveReminder, scheduleReminder, bootstrapReminders, checkDueReminders } from "@/lib/reminders";
 
 // ── Google Calendar icon — SVG, no white background (dark-mode safe) ──────────
@@ -39,7 +40,9 @@ export type PendingAction =
   | { type: "create_invoice"; data: InvoiceData }
   | { type: "create_timelog"; data: TimeLogData }
   | { type: "select_task"; tasks: TaskSearchResult[]; updates: TaskUpdate }
-  | { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate };
+  | { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate }
+  | { type: "select_invoice"; invoices: InvoiceSearchResult[]; updates: InvoiceUpdate }
+  | { type: "confirm_update_invoice"; invoice: InvoiceSearchResult; updates: InvoiceUpdate };
 
 export interface Message {
   id: string;
@@ -209,19 +212,59 @@ export default function ChatPage() {
       } else if (parsed.intent === "create_timelog") {
         patchMsg(thinkingId, { content: "Sessione estratta — modifica e conferma:", pending: { type: "create_timelog", data: parsed.data } });
       } else if (parsed.intent === "update_task") {
-        patchMsg(thinkingId, { content: "Cerco la task…" });
-        const sq = encodeURIComponent(parsed.searchQuery || "");
-        const cl = encodeURIComponent(parsed.cliente || "");
-        const searchRes = await fetch(`/api/search-tasks?q=${sq}&cliente=${cl}`);
-        const searchData = await searchRes.json();
-        if (!searchRes.ok || !searchData.tasks) { patchMsg(thinkingId, { content: `❌ ${searchData.error ?? "Errore ricerca"}` }); return; }
-        const tasks: TaskSearchResult[] = searchData.tasks;
-        if (tasks.length === 0) {
-          patchMsg(thinkingId, { content: `Nessuna task trovata${parsed.cliente ? " per " + parsed.cliente : ""}.\n\nUsa una parola del titolo esatto in Notion.` });
-        } else if (tasks.length === 1) {
-          patchMsg(thinkingId, { content: "Task trovata — conferma le modifiche:", pending: { type: "confirm_update", task: tasks[0], updates: parsed.updates } });
+        // If Claude identified the exact page from context, skip the search
+        if (parsed.notionPageId) {
+          const task: TaskSearchResult = {
+            id: parsed.notionPageId,
+            titolo: parsed.titolo || "Task",
+            cliente: parsed.cliente || "",
+            stato: "", priorita: "", deadline: "",
+            url: `https://notion.so/${parsed.notionPageId.replace(/-/g, "")}`,
+          };
+          patchMsg(thinkingId, { content: "Task trovata — conferma le modifiche:", pending: { type: "confirm_update", task, updates: parsed.updates } });
         } else {
-          patchMsg(thinkingId, { content: `${tasks.length} task trovate — scegli quale aggiornare:`, pending: { type: "select_task", tasks, updates: parsed.updates } });
+          patchMsg(thinkingId, { content: "Cerco la task…" });
+          const sq = encodeURIComponent(parsed.searchQuery || "");
+          const cl = encodeURIComponent(parsed.cliente || "");
+          const searchRes = await fetch(`/api/search-tasks?q=${sq}&cliente=${cl}`);
+          const searchData = await searchRes.json();
+          if (!searchRes.ok || !searchData.tasks) { patchMsg(thinkingId, { content: `❌ ${searchData.error ?? "Errore ricerca"}` }); return; }
+          const tasks: TaskSearchResult[] = searchData.tasks;
+          if (tasks.length === 0) {
+            patchMsg(thinkingId, { content: `Nessuna task trovata${parsed.cliente ? " per " + parsed.cliente : ""}.\n\nUsa una parola del titolo esatto in Notion.` });
+          } else if (tasks.length === 1) {
+            patchMsg(thinkingId, { content: "Task trovata — conferma le modifiche:", pending: { type: "confirm_update", task: tasks[0], updates: parsed.updates } });
+          } else {
+            patchMsg(thinkingId, { content: `${tasks.length} task trovate — scegli quale aggiornare:`, pending: { type: "select_task", tasks, updates: parsed.updates } });
+          }
+        }
+      } else if (parsed.intent === "update_invoice") {
+        // If Claude identified the exact page from context, skip the search
+        if (parsed.notionPageId) {
+          const invoice: InvoiceSearchResult = {
+            id: parsed.notionPageId,
+            descrizione: parsed.descrizione || "Fattura",
+            cliente: parsed.cliente || "",
+            importo: 0,
+            statoPagamento: parsed.statoAttuale || "",
+            url: `https://notion.so/${parsed.notionPageId.replace(/-/g, "")}`,
+          };
+          patchMsg(thinkingId, { content: "Fattura trovata — conferma le modifiche:", pending: { type: "confirm_update_invoice", invoice, updates: parsed.updates } });
+        } else {
+          patchMsg(thinkingId, { content: "Cerco la fattura…" });
+          const sq = encodeURIComponent(parsed.searchQuery || "");
+          const cl = encodeURIComponent(parsed.cliente || "");
+          const searchRes = await fetch(`/api/search-invoices?q=${sq}&cliente=${cl}`);
+          const searchData = await searchRes.json();
+          if (!searchRes.ok || !searchData.invoices) { patchMsg(thinkingId, { content: `❌ ${searchData.error ?? "Errore ricerca"}` }); return; }
+          const invoices: InvoiceSearchResult[] = searchData.invoices;
+          if (invoices.length === 0) {
+            patchMsg(thinkingId, { content: `Nessuna fattura trovata${parsed.cliente ? " per " + parsed.cliente : ""}.` });
+          } else if (invoices.length === 1) {
+            patchMsg(thinkingId, { content: "Fattura trovata — conferma le modifiche:", pending: { type: "confirm_update_invoice", invoice: invoices[0], updates: parsed.updates } });
+          } else {
+            patchMsg(thinkingId, { content: `${invoices.length} fatture trovate — scegli quale aggiornare:`, pending: { type: "select_invoice", invoices, updates: parsed.updates } });
+          }
         }
       } else {
         patchMsg(thinkingId, { content: "Non ho capito. Riprova." });
@@ -346,6 +389,23 @@ export default function ChatPage() {
 
   const handleSelectTask = (msgId: string, task: TaskSearchResult, updates: TaskUpdate) => {
     patchMsg(msgId, { content: "Task trovata — conferma le modifiche:", pending: { type: "confirm_update", task, updates } });
+  };
+
+  const handleSelectInvoice = (msgId: string, invoice: InvoiceSearchResult, updates: InvoiceUpdate) => {
+    patchMsg(msgId, { content: "Fattura trovata — conferma le modifiche:", pending: { type: "confirm_update_invoice", invoice, updates } });
+  };
+
+  const handleConfirmInvoiceUpdate = async (msgId: string, invoice: InvoiceSearchResult, updates: InvoiceUpdate) => {
+    patchMsg(msgId, { pending: undefined, content: "Aggiornamento…" });
+    setSavingId(msgId);
+    try {
+      const res = await fetch("/api/update-invoice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ invoiceId: invoice.id, updates }) });
+      const data = await res.json();
+      if (!res.ok || !data.success) { patchMsg(msgId, { content: `❌ ${data.error ?? "Errore"}` }); return; }
+      const newStato = updates.statoPagamento ?? "";
+      patchMsg(msgId, { content: `✓ Fattura "${invoice.descrizione}" → ${newStato}`, notionUrl: data.url });
+    } catch { patchMsg(msgId, { content: "❌ Errore di rete." }); }
+    finally { setSavingId(null); }
   };
 
   const handleConfirmUpdate = async (msgId: string, task: TaskSearchResult, updates: TaskUpdate) => {
@@ -521,6 +581,8 @@ export default function ChatPage() {
               onConfirmTimeLog={msg.pending?.type === "create_timelog" && savingId !== msg.id ? (d) => handleConfirmTimeLog(msg.id, d) : undefined}
               onSelectTask={msg.pending?.type === "select_task" && savingId !== msg.id ? (task) => handleSelectTask(msg.id, task, (msg.pending as { type: "select_task"; tasks: TaskSearchResult[]; updates: TaskUpdate }).updates) : undefined}
               onConfirmUpdate={msg.pending?.type === "confirm_update" && savingId !== msg.id ? (updates) => handleConfirmUpdate(msg.id, (msg.pending as { type: "confirm_update"; task: TaskSearchResult; updates: TaskUpdate }).task, updates) : undefined}
+              onSelectInvoice={msg.pending?.type === "select_invoice" && savingId !== msg.id ? (inv) => handleSelectInvoice(msg.id, inv, (msg.pending as { type: "select_invoice"; invoices: InvoiceSearchResult[]; updates: InvoiceUpdate }).updates) : undefined}
+              onConfirmInvoiceUpdate={msg.pending?.type === "confirm_update_invoice" && savingId !== msg.id ? (updates) => handleConfirmInvoiceUpdate(msg.id, (msg.pending as { type: "confirm_update_invoice"; invoice: InvoiceSearchResult; updates: InvoiceUpdate }).invoice, updates) : undefined}
               onCancel={msg.pending && savingId !== msg.id ? () => handleCancel(msg.id) : undefined}
             />
           ))}

@@ -26,8 +26,13 @@ body {
 
 /* ── Form elements dark mode ─────────────────────────────────────────────── */
 input[type="date"], input[type="time"], select { color-scheme: dark; }
-input[type="date"]::-webkit-calendar-picker-indicator,
-input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.3; cursor: pointer; }
+
+/* Overlay date/time inputs sit opacity-0 above the styled display div.
+ * Hiding the picker indicator prevents a ghost icon bleeding through on some browsers. */
+input.rm-picker-overlay::-webkit-calendar-picker-indicator {
+  display: none !important;
+  -webkit-appearance: none;
+}
 
 /* ── Prevent iOS auto-zoom on inputs ─────────────────────────────────────── */
 @media (max-width: 767px) {
