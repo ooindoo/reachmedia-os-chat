@@ -76,6 +76,7 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
           <ESelect
             value={e.tipoAttivita}
             options={TIPI_ATTIVITA}
+            withEmpty={false}
             onChange={(v) => set("tipoAttivita", v as TaskData["tipoAttivita"])}
           />
         </div>
@@ -95,6 +96,7 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
           <ESelect
             value={e.bloccatoDa ?? ""}
             options={BLOCCATO_DA_OPTS}
+            withEmpty={false}
             onChange={(v) => set("bloccatoDa", v as TaskData["bloccatoDa"])}
           />
         </div>
@@ -104,6 +106,7 @@ export default function TaskConfirmCard({ task, onConfirm, onCancel }: Props) {
           <ESelect
             value={e.approvazioneCliente ?? ""}
             options={APPROVAZIONE_OPTS}
+            withEmpty={false}
             onChange={(v) => set("approvazioneCliente", v as TaskData["approvazioneCliente"])}
           />
         </div>

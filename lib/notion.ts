@@ -1,5 +1,5 @@
 import { Client } from "@notionhq/client";
-import { CLIENTS } from "./clients";
+import { CLIENTS, TIPI_ATTIVITA, PRIORITA } from "./clients";
 import { notionDatetime } from "./tz";
 import type { TipoAttivita, Priorita, Canale, BloccatoDa, ApprovazioneCliente } from "./clients";
 
@@ -46,9 +46,17 @@ export async function createNotionTask(task: TaskData): Promise<NotionPage> {
   console.log("[Notion] Cliente relation payload:", JSON.stringify(clienteRelation));
   // ─────────────────────────────────────────────────────────────────────────
 
+  // Guard against browser-reset empty strings (e.g. tab woken from sleep resets <select>)
+  const safeTipoAttivita = (TIPI_ATTIVITA as readonly string[]).includes(task.tipoAttivita)
+    ? task.tipoAttivita
+    : TIPI_ATTIVITA[0];
+  const safePriorita = (PRIORITA as readonly string[]).includes(task.priorita)
+    ? task.priorita
+    : "🟡 Media";
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const properties: Record<string, any> = {
-    Task:            { title: [{ text: { content: task.titolo } }] },
+    Task:            { title: [{ text: { content: task.titolo || "Task" } }] },
     Cliente:         { relation: clienteRelation },
     // If the user specified a time (reminderTime), save as full datetime with correct
     // Rome offset (+02:00 CEST summer / +01:00 CET winter). Otherwise date-only.
@@ -59,8 +67,8 @@ export async function createNotionTask(task: TaskData): Promise<NotionPage> {
           : task.deadline,
       },
     },
-    "Priorità":      { select: { name: task.priorita } },
-    "Tipo attività": { select: { name: task.tipoAttivita } },
+    "Priorità":      { select: { name: safePriorita } },
+    "Tipo attività": { select: { name: safeTipoAttivita } },
     Stato:           { status: { name: "Not started" } },
   };
 
