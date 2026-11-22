@@ -6,7 +6,8 @@
  * what the "Annulla" button undoes.
  */
 import { notion } from "./notion";
-import type { Area, Categoria, TipoTaskNotion } from "./config";
+import type { Area, Categoria } from "./config";
+import type { TipoAttivita } from "../clients";
 import type { FoundEvent } from "./calendar";
 
 export const STATI = {
@@ -29,7 +30,8 @@ export interface Draft {
   durataMinuti: number;
   categoria: Categoria;
   cliente: string | null;
-  tipoAttivita: TipoTaskNotion | null;
+  tipoAttivita: TipoAttivita | null;
+  /** "Cosa da fare" (event + Notion task) rather than an appointment (event only). */
   creaTaskNotion: boolean;
   note: string | null;
   /** Set once the draft has been turned into an event. */

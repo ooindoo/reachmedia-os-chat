@@ -1,4 +1,4 @@
-import type { TipoAttivita } from "../clients";
+import { TIPI_ATTIVITA, type TipoAttivita } from "../clients";
 
 // ── Calendars (account arditnwork@gmail.com) ──────────────────────────────────
 // The area decides the calendar. The colour comes from the calendar itself:
@@ -46,21 +46,11 @@ export function isCategoria(v: unknown): v is Categoria {
 /** Clienti data source (read-only, only Stato = "Attivo"). */
 export const CLIENTI_DATA_SOURCE_ID = "78b2a353-104d-48cb-b569-f535a0b2134e";
 
-/** Deliverable work types: the only ones that create a Notion task. */
-export const TIPI_TASK_NOTION = [
-  "📧 Newsletter",
-  "🔄 Flow / Automation",
-  "🛍 Shopify Dev",
-  "📊 Report / Analytics",
-  "✍️ Copy / Content",
-  "🔧 Setup / Configurazione",
-  "🐛 Fix / Bug",
-  "📱 Social / Meta",
-] as const satisfies readonly TipoAttivita[];
-export type TipoTaskNotion = (typeof TIPI_TASK_NOTION)[number];
+/** "Tipo attività" options of the Task database (left empty when none fits). */
+export { TIPI_ATTIVITA };
 
-export function isTipoTaskNotion(v: unknown): v is TipoTaskNotion {
-  return typeof v === "string" && (TIPI_TASK_NOTION as readonly string[]).includes(v);
+export function isTipoAttivita(v: unknown): v is TipoAttivita {
+  return typeof v === "string" && (TIPI_ATTIVITA as readonly string[]).includes(v);
 }
 
 // ── Misc ──────────────────────────────────────────────────────────────────────

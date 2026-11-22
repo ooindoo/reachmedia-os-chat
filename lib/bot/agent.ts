@@ -6,8 +6,8 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  AREAS, AREA_KEYS, BOT_MODEL, CATEGORIE, TIPI_TASK_NOTION,
-  isArea, isCategoria, isTipoTaskNotion, type Area,
+  AREAS, AREA_KEYS, BOT_MODEL, CATEGORIE, TIPI_ATTIVITA,
+  isArea, isCategoria, isTipoAttivita, type Area,
 } from "./config";
 import { createEvent, deleteEvent, patchEvent, searchEvents, nextTiming, type FoundEvent } from "./calendar";
 import { createFromDraft, planFromDraft } from "./actions";
@@ -47,8 +47,12 @@ CATEGORIA PROMEMORIA
 - scadenza_lavoro: scadenze e consegne di lavoro, campagne NL.
 - airbnb: check-in, check-out e cose Airbnb.
 
-TASK NOTION
-crea_task_notion = true SOLO se: area lavoro_clienti, cliente presente nella lista clienti attivi, ed è un'attività di lavoro da consegnare (newsletter, flow, setup, report, sviluppo, copy, fix, social). Mai per chiamate (nemmeno ai clienti), Airbnb, personale o burocrazia. Usa il nome esatto del cliente dalla lista (es. "Squale" → "Squale SA").
+APPUNTAMENTO O COSA DA FARE (campo tipo, in qualunque area)
+- appuntamento: qualcosa a orario fisso che succede comunque, con altre persone o in un posto: calcetto, cena, sport, visita, call/riunione/incontro già fissato con qualcuno ("call con Luxyt alle 10"), check-in e check-out Airbnb. Solo evento in calendario.
+- cosa_da_fare: un'azione che devi completare tu, anche se ha giorno e ora: inserire ospiti, fatture, pagamenti, newsletter, campagne, report, setup, pratiche, documenti, mail. Evento in calendario + task Notion, che resta visibile finché non viene segnata come fatta. Una telefonata che devi fare tu ("chiamare X") non è un incontro concordato con l'altra persona.
+- Se non è chiaro, scegli cosa_da_fare: meglio una task in più che una cosa persa.
+cliente: nome esatto dalla lista clienti attivi se riguarda un cliente (es. "Squale" → "Squale SA"), altrimenti null.
+tipo_attivita: solo per cosa_da_fare, il valore della lista che descrive meglio l'attività; null se nessuno è adatto.
 
 INFORMAZIONI MANCANTI
 Se manca un'informazione indispensabile (cosa fare, oppure la data) usa chiedi_informazione con una domanda breve e non creare nulla per quella richiesta. In promemoria scrivi la frase che il sistema userà se l'utente passa ad altro, nel formato "<cosa> è rimasto senza <informazione>: me la dici?" (es. "Ross1000 è rimasto senza data: me la dici?"). Se manca solo l'ora non chiedere: passa ora null (il sistema mostra i bottoni).
@@ -68,7 +72,7 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "crea_evento",
     description:
-      "Crea un evento nel calendario dell'area indicata (e, se richiesto, la task Notion per il lavoro clienti). Se manca l'ora passa ora null: il sistema la chiede all'utente.",
+      "Crea un evento nel calendario dell'area indicata; per una cosa da fare crea anche la task Notion. Se manca l'ora passa ora null: il sistema la chiede all'utente.",
     input_schema: {
       type: "object",
       properties: {
@@ -79,17 +83,21 @@ const TOOLS: Anthropic.Tool[] = [
         durata_minuti: { type: "integer", description: "Durata in minuti, 30 se non indicata" },
         categoria_promemoria: { type: "string", enum: [...CATEGORIE] },
         cliente: { type: ["string", "null"], description: "Nome esatto dalla lista clienti attivi, oppure null" },
-        crea_task_notion: { type: "boolean" },
+        tipo: {
+          type: "string",
+          enum: ["appuntamento", "cosa_da_fare"],
+          description: "appuntamento = solo calendario; cosa_da_fare = calendario + task Notion. Se non è chiaro: cosa_da_fare",
+        },
         tipo_attivita: {
           type: ["string", "null"],
-          enum: [...TIPI_TASK_NOTION, null],
-          description: "Solo se crea_task_notion è true, altrimenti null",
+          enum: [...TIPI_ATTIVITA, null],
+          description: "Solo per cosa_da_fare: il tipo più adatto, null se nessuno è adatto",
         },
         note: { type: ["string", "null"], description: "Dettagli utili dal messaggio, oppure null" },
       },
       required: [
         "titolo", "area", "data", "ora", "durata_minuti", "categoria_promemoria",
-        "cliente", "crea_task_notion", "tipo_attivita", "note",
+        "cliente", "tipo", "tipo_attivita", "note",
       ],
       additionalProperties: false,
     },
@@ -250,8 +258,9 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
         durataMinuti: Number.isFinite(input.durata_minuti) ? Number(input.durata_minuti) : 30,
         categoria: input.categoria_promemoria,
         cliente: str(input.cliente),
-        tipoAttivita: isTipoTaskNotion(input.tipo_attivita) ? input.tipo_attivita : null,
-        creaTaskNotion: input.crea_task_notion === true,
+        tipoAttivita: isTipoAttivita(input.tipo_attivita) ? input.tipo_attivita : null,
+        // Only an explicit "appuntamento" skips the task: when unclear it is a cosa da fare.
+        creaTaskNotion: input.tipo !== "appuntamento",
         note: str(input.note),
       };
       if (!ora) {
@@ -262,9 +271,7 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
       st.azioni.push(...azioni);
       const ev = azioni.find((a) => a.tipo === "evento_creato");
       const withTask = ev?.tipo === "evento_creato" && Boolean(ev.taskUrl);
-      return `Creato evento in ${AREAS[draft.area].label}` +
-        (withTask ? " con task Notion." : ".") +
-        (draft.creaTaskNotion && !withTask ? " Task Notion NON creata (cliente non attivo o tipo non valido)." : "");
+      return `Creato evento in ${AREAS[draft.area].label}${withTask ? " con task Notion." : "."}`;
     }
 
     case "cerca_eventi": {

@@ -2,28 +2,29 @@
  * Deterministic actions shared by the Claude agent and the button callbacks:
  * turning a draft into event (+ Notion task), and undoing it.
  */
-import { AREAS, MIN_DURATION_MINUTES, isTipoTaskNotion } from "./config";
+import { AREAS, MIN_DURATION_MINUTES, isTipoAttivita } from "./config";
 import { createEvent, deleteEvent } from "./calendar";
-import { createTask, findActiveClient, trashPage } from "./notion";
+import { addEventLink, createTask, findActiveClient, trashPage } from "./notion";
 import type { Azione, Draft } from "./log";
 import { addMinutesLocal, formatDayShort } from "../tz";
 
 /**
- * Creates the event and, for deliverable client work, the Notion task first
- * (its link goes in the event description). If the event fails, the task is
- * moved to the trash so nothing is left half-done.
+ * Creates the event and, for a "cosa da fare", the Notion task first (its link
+ * goes in the event description, the event link goes in the task page). If
+ * the event fails, the task is moved to the trash so nothing is left half-done.
  */
 export async function createFromDraft(d: Draft, ora: string, bozza?: number): Promise<Azione[]> {
   const azioni: Azione[] = [];
   let task: { pageId: string; url: string } | null = null;
 
-  // Notion task only for deliverable client work in the "Lavoro clienti" area.
-  if (d.area === "lavoro_clienti" && d.creaTaskNotion && isTipoTaskNotion(d.tipoAttivita)) {
+  // "Cosa da fare" in any area: also a Notion task (client and type only when they apply).
+  if (d.creaTaskNotion) {
     const cliente = await findActiveClient(d.cliente);
-    if (cliente) {
-      task = await createTask({ titolo: d.titolo, clienteId: cliente.id, data: d.data, ora, tipo: d.tipoAttivita });
-      azioni.push({ tipo: "task_creata", bozza, pageId: task.pageId, url: task.url, titolo: d.titolo });
-    }
+    task = await createTask({
+      titolo: d.titolo, clienteId: cliente?.id ?? null, data: d.data, ora,
+      tipo: isTipoAttivita(d.tipoAttivita) ? d.tipoAttivita : null,
+    });
+    azioni.push({ tipo: "task_creata", bozza, pageId: task.pageId, url: task.url, titolo: d.titolo });
   }
 
   const descrizione = [
@@ -43,6 +44,7 @@ export async function createFromDraft(d: Draft, ora: string, bozza?: number): Pr
       categoria: d.categoria,
       ...(task ? { taskUrl: task.url } : {}),
     });
+    if (task && ev.htmlLink) await addEventLink(task.pageId, ev.htmlLink).catch(() => {});
   } catch (err) {
     if (task) await trashPage(task.pageId).catch(() => {});
     throw err;
@@ -52,15 +54,14 @@ export async function createFromDraft(d: Draft, ora: string, bozza?: number): Pr
 
 /** Dry run of createFromDraft: same decisions (task or not, end time), no writes. */
 export async function planFromDraft(d: Draft, ora: string): Promise<Azione[]> {
-  const cliente =
-    d.area === "lavoro_clienti" && d.creaTaskNotion && isTipoTaskNotion(d.tipoAttivita)
-      ? await findActiveClient(d.cliente)
-      : null;
+  const cliente = d.creaTaskNotion ? await findActiveClient(d.cliente) : null;
   const fine = addMinutesLocal(d.data, ora, Math.max(MIN_DURATION_MINUTES, d.durataMinuti || MIN_DURATION_MINUTES));
   return [{
     tipo: "evento_creato", area: d.area, calendarId: AREAS[d.area].calendarId, eventId: "DRY-RUN",
     titolo: d.titolo, data: d.data, ora, fineOra: fine.time, categoria: d.categoria,
-    ...(cliente ? { taskUrl: `(task Notion per ${cliente.nome}, ${d.tipoAttivita})` } : {}),
+    ...(d.creaTaskNotion
+      ? { taskUrl: `(task Notion · cliente: ${cliente?.nome ?? "—"} · tipo: ${d.tipoAttivita ?? "—"})` }
+      : {}),
   }];
 }
 
