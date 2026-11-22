@@ -4,9 +4,14 @@
  */
 import { AREAS, MIN_DURATION_MINUTES, isTipoAttivita } from "./config";
 import { createEvent, deleteEvent } from "./calendar";
-import { addEventLink, createTask, findActiveClient, trashPage } from "./notion";
+import { addEventLink, createTask, findActiveClient, findAirbnbClient, trashPage } from "./notion";
 import type { Azione, Draft } from "./log";
 import { addMinutesLocal, formatDayShort } from "../tz";
+
+/** Client for the task: the one named, or for Airbnb to-dos the active Airbnb client. */
+async function taskClient(d: Draft) {
+  return (await findActiveClient(d.cliente)) ?? (d.area === "airbnb" ? await findAirbnbClient() : null);
+}
 
 /**
  * Creates the event and, for a "cosa da fare", the Notion task first (its link
@@ -19,7 +24,7 @@ export async function createFromDraft(d: Draft, ora: string, bozza?: number): Pr
 
   // "Cosa da fare" in any area: also a Notion task (client and type only when they apply).
   if (d.creaTaskNotion) {
-    const cliente = await findActiveClient(d.cliente);
+    const cliente = await taskClient(d);
     task = await createTask({
       titolo: d.titolo, clienteId: cliente?.id ?? null, data: d.data, ora,
       tipo: isTipoAttivita(d.tipoAttivita) ? d.tipoAttivita : null,
@@ -54,7 +59,7 @@ export async function createFromDraft(d: Draft, ora: string, bozza?: number): Pr
 
 /** Dry run of createFromDraft: same decisions (task or not, end time), no writes. */
 export async function planFromDraft(d: Draft, ora: string): Promise<Azione[]> {
-  const cliente = d.creaTaskNotion ? await findActiveClient(d.cliente) : null;
+  const cliente = d.creaTaskNotion ? await taskClient(d) : null;
   const fine = addMinutesLocal(d.data, ora, Math.max(MIN_DURATION_MINUTES, d.durataMinuti || MIN_DURATION_MINUTES));
   return [{
     tipo: "evento_creato", area: d.area, calendarId: AREAS[d.area].calendarId, eventId: "DRY-RUN",

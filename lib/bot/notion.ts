@@ -20,7 +20,7 @@ export function notion(): Client {
 
 // ── Clienti ───────────────────────────────────────────────────────────────────
 
-export interface ActiveClient { id: string; nome: string }
+export interface ActiveClient { id: string; nome: string; /** "Tipo" in Clienti (Klaviyo, Shopify, Airbnb) */ tipo: string | null }
 
 let clientsCache: { at: number; list: ActiveClient[] } | null = null;
 const CLIENTS_TTL_MS = 10 * 60 * 1000;
@@ -41,7 +41,7 @@ export async function getActiveClients(): Promise<ActiveClient[]> {
       const props = (page as any).properties ?? {};
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const nome = (props.Nome?.title ?? []).map((t: any) => t.plain_text).join("").trim();
-      if (nome) list.push({ id: page.id, nome });
+      if (nome) list.push({ id: page.id, nome, tipo: props.Tipo?.select?.name ?? null });
     }
     cursor = res.has_more ? res.next_cursor ?? undefined : undefined;
   } while (cursor);
@@ -63,6 +63,12 @@ export async function findActiveClient(name: string | null | undefined): Promise
     clients.find((c) => norm(c.nome).includes(n) || n.includes(norm(c.nome))) ??
     null
   );
+}
+
+/** The only active client of Tipo "Airbnb", if there is exactly one. */
+export async function findAirbnbClient(): Promise<ActiveClient | null> {
+  const airbnb = (await getActiveClients()).filter((c) => c.tipo === "Airbnb");
+  return airbnb.length === 1 ? airbnb[0] : null;
 }
 
 // ── Task ──────────────────────────────────────────────────────────────────────
