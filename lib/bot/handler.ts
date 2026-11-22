@@ -9,6 +9,8 @@
  */
 import { AREAS } from "./config";
 import { runAgent } from "./agent";
+import { markDoneInMessage } from "./briefing";
+import { markTaskDone } from "./notion";
 import { createFromDraft, describe, undoCreations } from "./actions";
 import {
   STATI, compactId, createLog, findPendingQuestion, findWaitingForTypedTime, getLog, isUpdateLogged, updateLog,
@@ -68,7 +70,7 @@ export interface HandlerOptions {
 
 export async function handleUpdate(update: TgUpdate, opts: HandlerOptions = {}): Promise<void> {
   if (update.message) return handleMessage(update.update_id, update.message, opts);
-  if (update.callback_query) return handleCallback(update.callback_query);
+  if (update.callback_query) return handleCallback(update.update_id, update.callback_query);
 }
 
 // ── Text messages ─────────────────────────────────────────────────────────────
@@ -183,7 +185,7 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
 
 // ── Buttons ───────────────────────────────────────────────────────────────────
 
-async function handleCallback(cq: TgCallbackQuery): Promise<void> {
+async function handleCallback(updateId: number, cq: TgCallbackQuery): Promise<void> {
   const chatId = cq.message?.chat.id;
   if (!isAllowed(chatId, cq.from.id) || chatId === undefined) {
     await answerCallback(cq.id);
@@ -192,6 +194,13 @@ async function handleCallback(cq: TgCallbackQuery): Promise<void> {
   const [kind, logHex, a, b] = (cq.data ?? "").split(":");
   if (!logHex) {
     await answerCallback(cq.id);
+    return;
+  }
+
+  // "✅ Fatto" under the morning briefing: f:<task page id>:<line number>.
+  // Marks the Notion task Done; the calendar event is not touched.
+  if (kind === "f") {
+    await handleTaskDone(updateId, cq, chatId, logHex, Number(a));
     return;
   }
 
@@ -240,6 +249,26 @@ async function handleCallback(cq: TgCallbackQuery): Promise<void> {
     await answerCallback(cq.id, "Errore");
     await sendMessage(chatId, `❌ Errore: ${errMsg(err)}`);
     await updateLog(logHex, { errore: errMsg(err) }).catch(() => {});
+  }
+}
+
+async function handleTaskDone(
+  updateId: number, cq: TgCallbackQuery, chatId: number, taskHex: string, n: number
+): Promise<void> {
+  try {
+    const titolo = await markTaskDone(taskHex);
+    await answerCallback(cq.id, "Fatto ✅");
+    if (cq.message?.text) {
+      const next = markDoneInMessage(cq.message.text, cq.message.reply_markup?.inline_keyboard ?? [], n);
+      await editMessage(chatId, cq.message.message_id, next.text, next.keyboard);
+    }
+    if (!(await isUpdateLogged(updateId))) {
+      const logId = await createLog(`✅ Fatto: ${titolo}`, updateId);
+      await updateLog(logId, { stato: STATI.ok, azioni: [{ tipo: "task_completata", pageId: taskHex, titolo }] });
+    }
+  } catch (err) {
+    await answerCallback(cq.id, "Errore");
+    await sendMessage(chatId, `❌ Non sono riuscito a segnare la task come fatta: ${errMsg(err)}`);
   }
 }
 

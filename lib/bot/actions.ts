@@ -13,23 +13,35 @@ async function taskClient(d: Draft) {
   return (await findActiveClient(d.cliente)) ?? (d.area === "airbnb" ? await findAirbnbClient() : null);
 }
 
+/** A "cosa da fare" gets a Notion task, except personal reminders (calendar only). */
+function wantsTask(d: Draft): boolean {
+  return d.creaTaskNotion && d.area !== "personale";
+}
+
 /**
  * Creates the event and, for a "cosa da fare", the Notion task first (its link
- * goes in the event description, the event link goes in the task page). If
- * the event fails, the task is moved to the trash so nothing is left half-done.
+ * goes in the event description, the event link goes in the task page).
+ * If Notion fails, the event is created anyway and the reply says the task is
+ * missing: nothing gets lost. If the event fails, the task is moved to the
+ * trash so nothing is left half-done.
  */
 export async function createFromDraft(d: Draft, ora: string, bozza?: number): Promise<Azione[]> {
   const azioni: Azione[] = [];
   let task: { pageId: string; url: string } | null = null;
+  let taskErrore: string | undefined;
 
-  // "Cosa da fare" in any area: also a Notion task (client and type only when they apply).
-  if (d.creaTaskNotion) {
-    const cliente = await taskClient(d);
-    task = await createTask({
-      titolo: d.titolo, clienteId: cliente?.id ?? null, data: d.data, ora,
-      tipo: isTipoAttivita(d.tipoAttivita) ? d.tipoAttivita : null,
-    });
-    azioni.push({ tipo: "task_creata", bozza, pageId: task.pageId, url: task.url, titolo: d.titolo });
+  if (wantsTask(d)) {
+    try {
+      const cliente = await taskClient(d);
+      task = await createTask({
+        titolo: d.titolo, clienteId: cliente?.id ?? null, data: d.data, ora,
+        tipo: isTipoAttivita(d.tipoAttivita) ? d.tipoAttivita : null,
+      });
+      azioni.push({ tipo: "task_creata", bozza, pageId: task.pageId, url: task.url, titolo: d.titolo });
+    } catch (err) {
+      taskErrore = err instanceof Error ? err.message : String(err);
+      console.error("[bot] task Notion non creata:", taskErrore);
+    }
   }
 
   const descrizione = [
@@ -42,12 +54,14 @@ export async function createFromDraft(d: Draft, ora: string, bozza?: number): Pr
     const ev = await createEvent({
       area: d.area, titolo: d.titolo, data: d.data, ora, durataMinuti: d.durataMinuti,
       categoria: d.categoria, descrizione, notionPageId: task?.pageId,
+      tipo: d.creaTaskNotion ? "cosa_da_fare" : "appuntamento",
     });
     azioni.push({
       tipo: "evento_creato", bozza, area: ev.area, calendarId: ev.calendarId, eventId: ev.eventId,
       titolo: ev.titolo, data: ev.data, ora: ev.ora, fineOra: ev.fineOra, htmlLink: ev.htmlLink,
       categoria: d.categoria,
       ...(task ? { taskUrl: task.url } : {}),
+      ...(taskErrore ? { taskErrore } : {}),
     });
     if (task && ev.htmlLink) await addEventLink(task.pageId, ev.htmlLink).catch(() => {});
   } catch (err) {
@@ -59,12 +73,12 @@ export async function createFromDraft(d: Draft, ora: string, bozza?: number): Pr
 
 /** Dry run of createFromDraft: same decisions (task or not, end time), no writes. */
 export async function planFromDraft(d: Draft, ora: string): Promise<Azione[]> {
-  const cliente = d.creaTaskNotion ? await taskClient(d) : null;
+  const cliente = wantsTask(d) ? await taskClient(d) : null;
   const fine = addMinutesLocal(d.data, ora, Math.max(MIN_DURATION_MINUTES, d.durataMinuti || MIN_DURATION_MINUTES));
   return [{
     tipo: "evento_creato", area: d.area, calendarId: AREAS[d.area].calendarId, eventId: "DRY-RUN",
     titolo: d.titolo, data: d.data, ora, fineOra: fine.time, categoria: d.categoria,
-    ...(d.creaTaskNotion
+    ...(wantsTask(d)
       ? { taskUrl: `(task Notion · cliente: ${cliente?.nome ?? "—"} · tipo: ${d.tipoAttivita ?? "—"})` }
       : {}),
   }];
@@ -99,7 +113,8 @@ export function describe(azioni: Azione[]): string[] {
       case "evento_creato":
         lines.push(
           `✅ ${a.titolo} · ${AREAS[a.area].label} · ${formatDayShort(a.data)} ${a.ora}–${a.fineOra}` +
-            (a.taskUrl ? " · 📝 task Notion" : "")
+            (a.taskUrl ? " · 📝 task Notion" : "") +
+            (a.taskErrore ? `\n⚠️ Task Notion non creata: ${a.taskErrore.slice(0, 200)}` : "")
         );
         break;
       case "evento_modificato":

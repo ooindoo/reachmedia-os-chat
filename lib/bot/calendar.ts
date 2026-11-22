@@ -66,6 +66,9 @@ function extractItems(data: AnyRecord): AnyRecord[] {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** Saved on the event: drives "Le 3 cose" in the briefing. */
+export type TipoEvento = "cosa_da_fare" | "appuntamento";
+
 export interface NewEvent {
   area: Area;
   titolo: string;
@@ -75,6 +78,7 @@ export interface NewEvent {
   categoria: Categoria;
   descrizione?: string;
   notionPageId?: string;
+  tipo?: TipoEvento;
 }
 
 export interface CreatedEvent {
@@ -102,6 +106,7 @@ export interface FoundEvent {
   descrizione: string;
   categoria: Categoria | null;
   notionPageId: string | null;
+  tipo: TipoEvento | null;
 }
 
 // ── Create ────────────────────────────────────────────────────────────────────
@@ -113,6 +118,7 @@ export async function createEvent(e: NewEvent): Promise<CreatedEvent> {
 
   const privateProps: Record<string, string> = { rmBot: "1", rmCategoria: e.categoria };
   if (e.notionPageId) privateProps.rmNotionPageId = e.notionPageId;
+  if (e.tipo) privateProps.rmTipo = e.tipo;
 
   const created = extractEvent(
     await exec("GOOGLECALENDAR_CREATE_EVENT", {
@@ -175,6 +181,7 @@ function toFound(area: Area, ev: AnyRecord): FoundEvent | null {
     descrizione: String(ev.description ?? "").slice(0, 500),
     categoria: isCategoria(priv.rmCategoria) ? priv.rmCategoria : null,
     notionPageId: typeof priv.rmNotionPageId === "string" ? priv.rmNotionPageId : null,
+    tipo: priv.rmTipo === "cosa_da_fare" || priv.rmTipo === "appuntamento" ? priv.rmTipo : null,
   };
 }
 
@@ -248,6 +255,7 @@ export async function patchEvent(ev: FoundEvent, ch: EventChanges) {
       private: {
         rmBot: "1", rmCategoria: ch.categoria,
         ...(ev.notionPageId ? { rmNotionPageId: ev.notionPageId } : {}),
+        ...(ev.tipo ? { rmTipo: ev.tipo } : {}),
       },
     };
   }
@@ -262,4 +270,68 @@ export async function deleteEvent(calendarId: string, eventId: string): Promise<
     throw new Error("Calendario non consentito");
   }
   await exec("GOOGLECALENDAR_DELETE_EVENT", { calendar_id: calendarId, event_id: eventId, send_updates: "none" });
+}
+
+// ── Read-only: all calendars (morning briefing) ──────────────────────────────
+
+export interface CalendarInfo { id: string; nome: string; area: Area | null }
+
+/** Every calendar visible in the account (primary, holidays, the 5 areas…). */
+export async function listAllCalendars(): Promise<CalendarInfo[]> {
+  const data = await exec("GOOGLECALENDAR_LIST_CALENDARS", {});
+  const items: AnyRecord[] = data?.calendars ?? data?.items ?? [];
+  return items
+    .filter((c) => c.selected !== false && !c.deleted)
+    .map((c) => {
+      const area = AREA_KEYS.find((k) => AREAS[k].calendarId === c.id);
+      const nome = area ? AREAS[area].label : c.primary ? "Principale" : String(c.summaryOverride ?? c.summary ?? c.id);
+      return { id: String(c.id), nome, area: area ?? null };
+    })
+    // Area calendars first: when an event is in two calendars, the area one wins.
+    .sort((a, b) => Number(Boolean(b.area)) - Number(Boolean(a.area)));
+}
+
+export interface DayEvent {
+  key: string;          // iCalUID (dedup across calendars)
+  titolo: string;
+  ora: string | null;   // null = all-day
+  calendario: string;
+  area: Area | null;
+  categoria: Categoria | null;
+  tipo: TipoEvento | null;
+  notionPageId: string | null;
+}
+
+/** Events of one calendar overlapping the given Rome day, excluding cancelled and declined ones. */
+export async function listEventsOn(cal: CalendarInfo, date: string): Promise<DayEvent[]> {
+  const nextDay = addMinutesLocal(date, "00:00", 24 * 60).date;
+  const items = extractItems(
+    await exec("GOOGLECALENDAR_FIND_EVENT", {
+      calendar_id: cal.id,
+      time_min: rfc3339Rome(date, "00:00"),
+      time_max: rfc3339Rome(nextDay, "00:00"),
+      single_events: true,
+      order_by: "startTime",
+      max_results: 50,
+    })
+  );
+  return items
+    .filter((ev) => ev?.status !== "cancelled")
+    .filter((ev) => !(ev.attendees ?? []).some((a: AnyRecord) => a.self && a.responseStatus === "declined"))
+    .map((ev) => {
+      const start = ev.start?.dateTime ? isoToRomeLocal(ev.start.dateTime) : null;
+      // A timed event that started on a previous day counts as all-day for today.
+      const ora = start && start.date === date ? start.time : null;
+      const priv = ev.extendedProperties?.private ?? {};
+      return {
+        key: String(ev.iCalUID ?? ev.id),
+        titolo: ev.summary ?? "(senza titolo)",
+        ora,
+        calendario: cal.nome,
+        area: cal.area,
+        categoria: isCategoria(priv.rmCategoria) ? priv.rmCategoria : null,
+        tipo: priv.rmTipo === "cosa_da_fare" || priv.rmTipo === "appuntamento" ? priv.rmTipo : null,
+        notionPageId: typeof priv.rmNotionPageId === "string" ? priv.rmNotionPageId : null,
+      };
+    });
 }

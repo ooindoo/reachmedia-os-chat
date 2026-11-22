@@ -8,6 +8,26 @@
     },
     "app/api/telegram/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/briefing/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/cron/sera/route.ts": {
+      "maxDuration": 60
+    }
+  },
+  "schedules": {
+    "briefing-mattina": {
+      "schedule": "0 8 * * *",
+      "timezone": "Europe/Rome",
+      "path": "/api/cron/briefing",
+      "requestMethod": "GET"
+    },
+    "piano-sera": {
+      "schedule": "0 21 * * *",
+      "timezone": "Europe/Rome",
+      "path": "/api/cron/sera",
+      "requestMethod": "GET"
     }
   }
 }

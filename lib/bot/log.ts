@@ -43,6 +43,8 @@ export type Azione =
       tipo: "evento_creato"; bozza?: number; area: Area; calendarId: string; eventId: string;
       titolo: string; data: string; ora: string; fineOra: string; htmlLink?: string;
       categoria?: Categoria; taskUrl?: string; annullato?: boolean;
+      /** The Notion task should have been created but Notion failed (the event was created anyway). */
+      taskErrore?: string;
     }
   | { tipo: "task_creata"; bozza?: number; pageId: string; url: string; titolo: string; annullato?: boolean }
   | {
@@ -53,7 +55,8 @@ export type Azione =
       tipo: "evento_ricreato"; daArea: Area; area: Area; prima: FoundEvent;
       calendarId: string; eventId: string; titolo: string; data: string; ora: string; fineOra: string;
     }
-  | { tipo: "evento_eliminato"; area: Area; calendarId: string; eventId: string; prima: FoundEvent };
+  | { tipo: "evento_eliminato"; area: Area; calendarId: string; eventId: string; prima: FoundEvent }
+  | { tipo: "task_completata"; pageId: string; titolo: string };
 
 /** One turn of a pending conversation (the bot asked something). */
 export interface Turno {

@@ -8,6 +8,7 @@ export interface TgMessage {
   chat: { id: number };
   from?: { id: number };
   text?: string;
+  reply_markup?: { inline_keyboard?: InlineKeyboard };
 }
 export interface TgCallbackQuery {
   id: string;

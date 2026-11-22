@@ -7,9 +7,9 @@
  *    calendar event in the page body
  */
 import { Client } from "@notionhq/client";
-import { notionDatetime } from "../tz";
+import { isoToRomeLocal, notionDatetime } from "../tz";
 import { toNotionId } from "../notion";
-import { CLIENTI_DATA_SOURCE_ID } from "./config";
+import { CLIENTI_DATA_SOURCE_ID, TASK_DATA_SOURCE_ID } from "./config";
 import type { TipoAttivita } from "../clients";
 
 let notionClient: Client | null = null;
@@ -85,7 +85,7 @@ export async function createTask(t: {
   if (t.clienteId) properties.Cliente = { relation: [{ id: toNotionId(t.clienteId) }] };
   if (t.tipo) properties["Tipo attività"] = { select: { name: t.tipo } };
   const page = await notion().pages.create({
-    parent: { type: "data_source_id", data_source_id: process.env.NOTION_TASK_DB! },
+    parent: { type: "data_source_id", data_source_id: TASK_DATA_SOURCE_ID },
     properties,
   });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -113,4 +113,61 @@ export async function updateTaskDeadline(pageId: string, data: string, ora: stri
 /** Moves the page to Notion's trash (recoverable), never a hard delete. */
 export async function trashPage(pageId: string): Promise<void> {
   await notion().pages.update({ page_id: pageId, in_trash: true });
+}
+
+// ── Open tasks (briefing and evening plan) ────────────────────────────────────
+
+export interface OpenTask {
+  id: string;
+  titolo: string;
+  giorno: string;        // Deadline day, Rome (YYYY-MM-DD)
+  ora: string | null;    // Deadline time when it has one
+  conCliente: boolean;
+}
+
+/** Tasks not Done with Deadline on or before `day` (YYYY-MM-DD, Rome), oldest first. */
+export async function getOpenTasksUntil(day: string): Promise<OpenTask[]> {
+  const out: OpenTask[] = [];
+  let cursor: string | undefined;
+  do {
+    const res = await notion().dataSources.query({
+      data_source_id: TASK_DATA_SOURCE_ID,
+      filter: {
+        and: [
+          { property: "Stato", status: { does_not_equal: "Done" } },
+          { property: "Deadline", date: { on_or_before: day } },
+        ],
+      },
+      sorts: [{ property: "Deadline", direction: "ascending" }],
+      start_cursor: cursor,
+      page_size: 100,
+    });
+    for (const page of res.results) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const props = (page as any).properties ?? {};
+      const start: string | undefined = props.Deadline?.date?.start;
+      if (!start) continue;
+      const local = start.includes("T") ? isoToRomeLocal(start) : { date: start, time: null };
+      if (local.date > day) continue; // datetime just past midnight in UTC terms
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const titolo = (props.Task?.title ?? []).map((t: any) => t.plain_text).join("").trim() || "(senza titolo)";
+      out.push({
+        id: page.id, titolo, giorno: local.date, ora: local.time,
+        conCliente: (props.Cliente?.relation ?? []).length > 0,
+      });
+    }
+    cursor = res.has_more ? res.next_cursor ?? undefined : undefined;
+  } while (cursor);
+  return out;
+}
+
+/** "✅ Fatto" button: Stato → Done. Returns the task title. */
+export async function markTaskDone(pageId: string): Promise<string> {
+  const page = await notion().pages.update({
+    page_id: pageId,
+    properties: { Stato: { status: { name: "Done" } } },
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const title = ((page as any).properties?.Task?.title ?? []).map((t: any) => t.plain_text).join("");
+  return title || "(senza titolo)";
 }

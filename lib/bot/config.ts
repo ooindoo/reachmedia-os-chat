@@ -46,6 +46,13 @@ export function isCategoria(v: unknown): v is Categoria {
 /** Clienti data source (read-only, only Stato = "Attivo"). */
 export const CLIENTI_DATA_SOURCE_ID = "78b2a353-104d-48cb-b569-f535a0b2134e";
 
+/**
+ * Task data source. Fixed here instead of NOTION_TASK_DB: on Vercel that
+ * variable holds the Task *database* ID, which the web chat needs (old API),
+ * while the bot writes through the data source.
+ */
+export const TASK_DATA_SOURCE_ID = "0539e885-5d4f-4e42-8cd2-21c9d91e3bb9";
+
 /** "Tipo attività" options of the Task database (left empty when none fits). */
 export { TIPI_ATTIVITA };
 

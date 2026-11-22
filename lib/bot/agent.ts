@@ -51,6 +51,7 @@ APPUNTAMENTO O COSA DA FARE (campo tipo, in qualunque area)
 - appuntamento: qualcosa a orario fisso che succede comunque, con altre persone o in un posto: calcetto, cena, sport, visita, call/riunione/incontro già fissato con qualcuno ("call con Luxyt alle 10"), check-in e check-out Airbnb. Solo evento in calendario.
 - cosa_da_fare: un'azione che devi completare tu, anche se ha giorno e ora: inserire ospiti, fatture, pagamenti, newsletter, campagne, report, setup, pratiche, documenti, mail. Evento in calendario + task Notion, che resta visibile finché non viene segnata come fatta. Una telefonata che devi fare tu ("chiamare X") non è un incontro concordato con l'altra persona.
 - Se non è chiaro, scegli cosa_da_fare: meglio una task in più che una cosa persa.
+- Nell'area personale (promemoria personali) non si crea mai la task Notion, solo l'evento: il sistema lo gestisce da solo.
 cliente: nome esatto dalla lista clienti attivi se riguarda un cliente (es. "Squale" → "Squale SA"), altrimenti null. Per le cose da fare Airbnb, se non nomini un cliente, il sistema collega da solo il cliente Airbnb attivo.
 tipo_attivita: solo per cosa_da_fare, il valore della lista che descrive meglio l'attività; null se nessuno è adatto.
 
@@ -315,6 +316,7 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
           area: nuovaArea, titolo: changes.titolo ?? ev.titolo, data: t.data, ora: t.ora,
           durataMinuti: t.durata, categoria, descrizione: ev.descrizione,
           notionPageId: ev.notionPageId ?? undefined,
+          tipo: ev.tipo ?? undefined,
         });
         await deleteEvent(ev.calendarId, ev.eventId);
         if (ev.notionPageId && (t.data !== ev.data || t.ora !== ev.ora)) {
