@@ -5,6 +5,9 @@
     },
     "app/api/create-task/route.ts": {
       "maxDuration": 15
+    },
+    "app/api/telegram/route.ts": {
+      "maxDuration": 60
     }
   }
 }

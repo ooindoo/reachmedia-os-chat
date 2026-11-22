@@ -100,3 +100,63 @@ export function romeOffset(dateStr: string): string {
 export function notionDatetime(dateStr: string, timeStr: string): string {
   return `${dateStr}T${timeStr}:00.000${romeOffset(dateStr)}`;
 }
+
+// ── Local (Rome wall-clock) date/time arithmetic ──────────────────────────────
+// Dates are "YYYY-MM-DD", times are "HH:MM", both meant as Rome wall-clock.
+// Arithmetic runs on a fake-UTC timeline so the server timezone never matters.
+
+function localToMs(dateStr: string, timeStr: string): number {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  const [h, mi] = timeStr.split(":").map(Number);
+  return Date.UTC(y, mo - 1, d, h, mi);
+}
+
+function msToLocal(ms: number): { date: string; time: string } {
+  const iso = new Date(ms).toISOString(); // "YYYY-MM-DDTHH:MM:SS.sssZ"
+  return { date: iso.slice(0, 10), time: iso.slice(11, 16) };
+}
+
+/** Add minutes to a Rome wall-clock date+time. */
+export function addMinutesLocal(dateStr: string, timeStr: string, minutes: number) {
+  return msToLocal(localToMs(dateStr, timeStr) + minutes * 60_000);
+}
+
+/** Minutes from (aDate aTime) to (bDate bTime), Rome wall-clock. */
+export function minutesBetweenLocal(aDate: string, aTime: string, bDate: string, bTime: string): number {
+  return Math.round((localToMs(bDate, bTime) - localToMs(aDate, aTime)) / 60_000);
+}
+
+/** RFC3339 timestamp with the Rome offset, e.g. "2026-11-28T20:00:00+01:00". */
+export function rfc3339Rome(dateStr: string, timeStr: string): string {
+  return `${dateStr}T${timeStr}:00${romeOffset(dateStr)}`;
+}
+
+/** Convert any ISO timestamp to Rome wall-clock date + time. */
+export function isoToRomeLocal(iso: string): { date: string; time: string } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: ROME, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(new Date(iso));
+  const get = (t: string) => parts.find((p) => p.type === t)!.value;
+  const hour = get("hour") === "24" ? "00" : get("hour");
+  return { date: `${get("year")}-${get("month")}-${get("day")}`, time: `${hour}:${get("minute")}` };
+}
+
+/** Current Rome wall-clock date + time. */
+export function nowRome(): { date: string; time: string } {
+  return isoToRomeLocal(new Date().toISOString());
+}
+
+const GIORNI = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"];
+const MESI_BREVI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+
+/** Italian weekday name ("venerdì") for a YYYY-MM-DD date. */
+export function weekdayIt(dateStr: string): string {
+  return GIORNI[romeDayOfWeek(dateStr)];
+}
+
+/** "ven 28 nov" */
+export function formatDayShort(dateStr: string): string {
+  const [, mo, d] = dateStr.split("-").map(Number);
+  return `${weekdayIt(dateStr).slice(0, 3)} ${d} ${MESI_BREVI[mo - 1]}`;
+}

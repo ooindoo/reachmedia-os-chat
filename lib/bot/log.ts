@@ -1,0 +1,182 @@
+/**
+ * "🤖 Bot Log" database in Notion (NOTION_LOG_DB = data source ID).
+ * One row per incoming Telegram message. It records what was received and
+ * every action taken (with event / page IDs), and it also holds the bot's
+ * state: drafts waiting for a time, and what the "Annulla" button undoes.
+ */
+import { notion } from "./notion";
+import type { Area, Categoria, TipoTaskNotion } from "./config";
+import type { FoundEvent } from "./calendar";
+
+export const STATI = {
+  ok: "✅ Ok",
+  errore: "❌ Errore",
+  attesaOra: "⏳ Attesa ora",
+  attesaOraScritta: "⌨️ Attesa ora scritta",
+  annullato: "↩️ Annullato",
+  nessuna: "ℹ️ Nessuna azione",
+} as const;
+export type Stato = (typeof STATI)[keyof typeof STATI];
+
+/** An event to create, possibly still without a time. */
+export interface Draft {
+  titolo: string;
+  area: Area;
+  data: string;
+  ora: string | null;
+  durataMinuti: number;
+  categoria: Categoria;
+  cliente: string | null;
+  tipoAttivita: TipoTaskNotion | null;
+  creaTaskNotion: boolean;
+  note: string | null;
+  /** Set once the draft has been turned into an event. */
+  completata?: boolean;
+}
+
+export type Azione =
+  | {
+      tipo: "evento_creato"; bozza?: number; area: Area; calendarId: string; eventId: string;
+      titolo: string; data: string; ora: string; fineOra: string; htmlLink?: string;
+      categoria?: Categoria; taskUrl?: string; annullato?: boolean;
+    }
+  | { tipo: "task_creata"; bozza?: number; pageId: string; url: string; titolo: string; annullato?: boolean }
+  | {
+      tipo: "evento_modificato"; area: Area; calendarId: string; eventId: string;
+      prima: FoundEvent; titolo: string; data: string; ora: string; fineOra: string;
+    }
+  | {
+      tipo: "evento_ricreato"; daArea: Area; area: Area; prima: FoundEvent;
+      calendarId: string; eventId: string; titolo: string; data: string; ora: string; fineOra: string;
+    }
+  | { tipo: "evento_eliminato"; area: Area; calendarId: string; eventId: string; prima: FoundEvent };
+
+export interface LogRow {
+  id: string;
+  stato: Stato | null;
+  azioni: Azione[];
+  bozze: Draft[];
+  /** Index of the draft waiting for a typed time ("Altro"). */
+  bozzaInAttesa: number | null;
+}
+
+const MAX_CHUNK = 2000;
+
+function richText(s: string) {
+  const chunks: { type: "text"; text: { content: string } }[] = [];
+  for (let i = 0; i < s.length && chunks.length < 100; i += MAX_CHUNK) {
+    chunks.push({ type: "text", text: { content: s.slice(i, i + MAX_CHUNK) } });
+  }
+  return chunks;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function readText(prop: any): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (prop?.rich_text ?? []).map((t: any) => t.plain_text).join("");
+}
+
+function logDs(): string {
+  const id = process.env.NOTION_LOG_DB;
+  if (!id) throw new Error("Variabile d'ambiente mancante: NOTION_LOG_DB");
+  return id;
+}
+
+export async function createLog(messaggio: string, updateId: number): Promise<string> {
+  const page = await notion().pages.create({
+    parent: { type: "data_source_id", data_source_id: logDs() },
+    properties: {
+      Messaggio: { title: richText(messaggio.slice(0, 2000) || "(vuoto)") },
+      "Update ID": { number: updateId },
+      Stato: { select: { name: STATI.nessuna } },
+    },
+  });
+  return page.id;
+}
+
+export async function updateLog(
+  id: string,
+  patch: {
+    stato?: Stato;
+    azioni?: Azione[];
+    bozze?: Draft[];
+    bozzaInAttesa?: number | null;
+    risposta?: string;
+    errore?: string;
+  }
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const properties: Record<string, any> = {};
+  if (patch.stato) properties.Stato = { select: { name: patch.stato } };
+  if (patch.risposta !== undefined) properties.Risposta = { rich_text: richText(patch.risposta) };
+  if (patch.errore !== undefined) properties.Errore = { rich_text: richText(patch.errore) };
+  if (patch.azioni) {
+    properties.Azioni = { rich_text: richText(JSON.stringify(patch.azioni)) };
+    const events = patch.azioni.filter(
+      (a): a is Extract<Azione, { eventId: string }> => "eventId" in a && a.tipo !== "evento_eliminato"
+    );
+    properties["Event ID"] = { rich_text: richText(events.map((a) => a.eventId).join(", ")) };
+    properties.Calendario = {
+      rich_text: richText(Array.from(new Set(events.map((a) => a.calendarId))).join(", ")),
+    };
+    const task = patch.azioni.find((a) => a.tipo === "task_creata");
+    properties["Notion Task"] = { url: task && task.tipo === "task_creata" ? task.url : null };
+  }
+  if (patch.bozze !== undefined || patch.bozzaInAttesa !== undefined) {
+    const current = patch.bozze === undefined || patch.bozzaInAttesa === undefined ? await getLog(id) : null;
+    const bozze = patch.bozze ?? current?.bozze ?? [];
+    const inAttesa = patch.bozzaInAttesa !== undefined ? patch.bozzaInAttesa : current?.bozzaInAttesa ?? null;
+    properties.Bozza = {
+      rich_text: bozze.length ? richText(JSON.stringify({ bozze, inAttesa })) : [],
+    };
+  }
+  await notion().pages.update({ page_id: id, properties });
+}
+
+export async function getLog(id: string): Promise<LogRow> {
+  const page = await notion().pages.retrieve({ page_id: id });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const props = (page as any).properties ?? {};
+  const azioniRaw = readText(props.Azioni);
+  const bozzaRaw = readText(props.Bozza);
+  const bozza = bozzaRaw ? (JSON.parse(bozzaRaw) as { bozze: Draft[]; inAttesa: number | null }) : null;
+  return {
+    id: page.id,
+    stato: (props.Stato?.select?.name as Stato) ?? null,
+    azioni: azioniRaw ? (JSON.parse(azioniRaw) as Azione[]) : [],
+    bozze: bozza?.bozze ?? [],
+    bozzaInAttesa: bozza?.inAttesa ?? null,
+  };
+}
+
+/** Telegram re-sends an update if our answer is late: skip ones already logged. */
+export async function isUpdateLogged(updateId: number): Promise<boolean> {
+  const res = await notion().dataSources.query({
+    data_source_id: logDs(),
+    filter: { property: "Update ID", number: { equals: updateId } },
+    page_size: 1,
+  });
+  return res.results.length > 0;
+}
+
+/** Most recent row waiting for a typed time, if "Altro" was pressed in the last 30 min. */
+export async function findWaitingForTypedTime(): Promise<LogRow | null> {
+  const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const res = await notion().dataSources.query({
+    data_source_id: logDs(),
+    filter: {
+      and: [
+        { property: "Stato", select: { equals: STATI.attesaOraScritta } },
+        { timestamp: "last_edited_time", last_edited_time: { on_or_after: since } },
+      ],
+    },
+    sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+    page_size: 1,
+  });
+  return res.results[0] ? getLog(res.results[0].id) : null;
+}
+
+/** Notion page IDs travel in callback_data without dashes (64-byte limit). */
+export function compactId(id: string): string {
+  return id.replace(/-/g, "");
+}

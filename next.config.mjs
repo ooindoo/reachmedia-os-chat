@@ -2,7 +2,7 @@
 const nextConfig = {
   // Increase serverless function timeout for AI calls
   experimental: {
-    serverComponentsExternalPackages: ["@notionhq/client"],
+    serverComponentsExternalPackages: ["@notionhq/client", "@composio/core"],
   },
 };
 
