@@ -1,5 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import { isAllowedEmail } from "./allowed-emails";
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -17,6 +18,12 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    // Only the allowed Google accounts can sign in (any other gets "Access denied").
+    async signIn({ user, profile }) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const verified = (profile as any)?.email_verified !== false;
+      return verified && isAllowedEmail(user.email ?? profile?.email);
+    },
     async jwt({ token, account }) {
       // First sign-in: persist tokens + granted scopes from Google
       if (account) {
@@ -64,7 +71,6 @@ export const authOptions: NextAuthOptions = {
     },
   },
   secret: process.env.NEXTAUTH_SECRET,
-  pages: {
-    signIn: "/", // redirect back to app after sign-in
-  },
+  // No custom sign-in page: "/" is now behind login (middleware.ts), so the
+  // default NextAuth page is used and redirects back to the app after login.
 };
