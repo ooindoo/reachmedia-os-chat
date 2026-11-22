@@ -50,6 +50,14 @@ CATEGORIA PROMEMORIA
 TASK NOTION
 crea_task_notion = true SOLO se: area lavoro_clienti, cliente presente nella lista clienti attivi, ed è un'attività di lavoro da consegnare (newsletter, flow, setup, report, sviluppo, copy, fix, social). Mai per chiamate (nemmeno ai clienti), Airbnb, personale o burocrazia. Usa il nome esatto del cliente dalla lista (es. "Squale" → "Squale SA").
 
+INFORMAZIONI MANCANTI
+Se manca un'informazione indispensabile (cosa fare, oppure la data) usa chiedi_informazione con una domanda breve e non creare nulla per quella richiesta. In promemoria scrivi la frase che il sistema userà se l'utente passa ad altro, nel formato "<cosa> è rimasto senza <informazione>: me la dici?" (es. "Ross1000 è rimasto senza data: me la dici?"). Se manca solo l'ora non chiedere: passa ora null (il sistema mostra i bottoni).
+
+DOMANDA IN SOSPESO
+Se nella conversazione hai già fatto una domanda, chiama sempre domanda_in_sospeso per dire se il nuovo messaggio è la risposta. Il nuovo messaggio può essere:
+- la risposta: unisci la risposta alla richiesta originale e completa l'azione (es. "Inserire gli ospiti su Ross1000" + "domani alle 10" → un solo evento con quel titolo, domani alle 10:00). Se manca ancora qualcosa, chiedi di nuovo.
+- una richiesta nuova e scollegata (descrive un'altra cosa da fare): gestisci solo il nuovo messaggio e ignora del tutto la richiesta in sospeso, senza mescolarle e senza creare niente per quella.
+
 MODIFICARE O ELIMINARE
 Usa prima cerca_eventi, poi modifica_evento o elimina_evento con l'event_id trovato. Se più eventi corrispondono e non è chiaro quale, non toccare nulla e rispondi elencandoli in breve.
 
@@ -124,6 +132,34 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "chiedi_informazione",
+    description:
+      "Fa una domanda all'utente quando manca un'informazione indispensabile (cosa fare o la data). Non creare nulla per quella richiesta finché l'utente non risponde.",
+    input_schema: {
+      type: "object",
+      properties: {
+        domanda: { type: "string", description: "Domanda breve in italiano" },
+        promemoria: {
+          type: "string",
+          description: "Frase breve per ricordare la richiesta se l'utente passa ad altro, es. \"Ross1000 è rimasto senza data: me la dici?\"",
+        },
+      },
+      required: ["domanda", "promemoria"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "domanda_in_sospeso",
+    description:
+      "Da chiamare solo quando sopra c'è una tua domanda ancora senza risposta: indica se il nuovo messaggio è la risposta a quella domanda (true) oppure una richiesta nuova e scollegata (false).",
+    input_schema: {
+      type: "object",
+      properties: { e_la_risposta: { type: "boolean" } },
+      required: ["e_la_risposta"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "elimina_evento",
     description: "Elimina un evento trovato con cerca_eventi. La task Notion collegata, se c'è, non viene toccata.",
     input_schema: {
@@ -157,6 +193,18 @@ export interface AgentResult {
   bozze: Draft[];
   /** Real failures (Composio, Notion...), not input validation errors. */
   errori: string[];
+  /** Question for the user when information is missing (nothing was created for it). */
+  domanda: string | null;
+  /** Reminder sentence for that question, used if the user moves on ("… me la dici?"). */
+  promemoria: string | null;
+  /** With a pending question: did this message answer it? null = no pending question. */
+  rispostaSospeso: boolean | null;
+  testo: string;
+}
+
+/** Previous turns of a conversation still waiting for the user's answer. */
+export interface StoriaTurno {
+  ruolo: "utente" | "bot";
   testo: string;
 }
 
@@ -175,6 +223,11 @@ interface RunState {
   azioni: Azione[];
   bozze: Draft[];
   errori: string[];
+  domanda: string | null;
+  promemoria: string | null;
+  /** True when the conversation includes a pending bot question. */
+  haSospeso: boolean;
+  rispostaSospeso: boolean | null;
   found: Map<string, FoundEvent>;
 }
 
@@ -280,6 +333,22 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
       return `Evento modificato: ${r.titolo}, ${formatDayShort(r.data)} ${r.ora}–${r.fineOra}.`;
     }
 
+    case "chiedi_informazione": {
+      const domanda = str(input.domanda);
+      if (!domanda) throw new ToolInputError("domanda mancante");
+      st.domanda = domanda;
+      st.promemoria = str(input.promemoria);
+      return "Domanda registrata: verrà inviata all'utente. Non creare nulla per questa richiesta e non aggiungere altro testo.";
+    }
+
+    case "domanda_in_sospeso": {
+      if (!st.haSospeso) return "Nessuna domanda in sospeso: ignora.";
+      st.rispostaSospeso = input.e_la_risposta === true;
+      return st.rispostaSospeso
+        ? "Ok: unisci la risposta alla richiesta originale."
+        : "Ok: gestisci solo il nuovo messaggio, la richiesta in sospeso verrà ricordata dal sistema.";
+    }
+
     case "elimina_evento": {
       const ev = st.found.get(String(input.event_id));
       if (!ev) throw new ToolInputError("event_id sconosciuto: usa prima cerca_eventi");
@@ -296,11 +365,25 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
 
 // ── Loop ──────────────────────────────────────────────────────────────────────
 
-export async function runAgent(text: string, opts: { dryRun?: boolean } = {}): Promise<AgentResult> {
-  const st: RunState = { dryRun: opts.dryRun === true, azioni: [], bozze: [], errori: [], found: new Map() };
-  const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: `${await contextBlock()}\n\nMESSAGGIO: ${text}` },
-  ];
+export async function runAgent(
+  text: string,
+  opts: { dryRun?: boolean; storia?: StoriaTurno[] } = {}
+): Promise<AgentResult> {
+  // A pending exchange (user request → bot question) goes first as real turns,
+  // so Claude can tell whether the new message answers it or is a new request.
+  const storia = opts.storia ?? [];
+  const st: RunState = {
+    dryRun: opts.dryRun === true, azioni: [], bozze: [], errori: [],
+    domanda: null, promemoria: null, haSospeso: storia.length > 0, rispostaSospeso: null, found: new Map(),
+  };
+  const messages: Anthropic.MessageParam[] = storia.map((t) => ({
+    role: t.ruolo === "utente" ? ("user" as const) : ("assistant" as const),
+    content: t.ruolo === "utente" ? `MESSAGGIO: ${t.testo}` : t.testo,
+  }));
+  const nota = storia.length
+    ? "\n(Sopra c'è una tua domanda ancora senza risposta: questo messaggio può essere la risposta oppure una richiesta nuova.)"
+    : "";
+  messages.push({ role: "user", content: `${await contextBlock()}${nota}\n\nMESSAGGIO: ${text}` });
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response = await anthropic.messages.create({

@@ -11,8 +11,8 @@ import { AREAS } from "./config";
 import { runAgent } from "./agent";
 import { createFromDraft, describe, undoCreations } from "./actions";
 import {
-  STATI, compactId, createLog, findWaitingForTypedTime, getLog, isUpdateLogged, updateLog,
-  type Azione, type LogRow, type Stato,
+  STATI, compactId, createLog, findPendingQuestion, findWaitingForTypedTime, getLog, isUpdateLogged, updateLog,
+  type Azione, type LogRow, type Sospeso, type Stato,
 } from "./log";
 import {
   answerCallback, editMessage, sendMessage, sendTyping,
@@ -59,32 +59,40 @@ function hasCreation(azioni: Azione[]): boolean {
   return azioni.some((a) => a.tipo === "evento_creato" && !a.annullato);
 }
 
-export async function handleUpdate(update: TgUpdate): Promise<void> {
-  if (update.message) return handleMessage(update.update_id, update.message);
+export interface HandlerOptions {
+  /** Decide everything without calendar/Notion task writes (log rows are still written). */
+  dryRun?: boolean;
+  /** Replaces the Telegram reply for text messages (used by tests). */
+  reply?: (text: string, keyboard?: InlineKeyboard) => Promise<void>;
+}
+
+export async function handleUpdate(update: TgUpdate, opts: HandlerOptions = {}): Promise<void> {
+  if (update.message) return handleMessage(update.update_id, update.message, opts);
   if (update.callback_query) return handleCallback(update.callback_query);
 }
 
 // ── Text messages ─────────────────────────────────────────────────────────────
 
-async function handleMessage(updateId: number, msg: TgMessage): Promise<void> {
+async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOptions): Promise<void> {
   const chatId = msg.chat.id;
+  const say = opts.reply ?? (async (t: string, k?: InlineKeyboard) => { await sendMessage(chatId, t, k); });
   if (!isAllowed(chatId, msg.from?.id)) {
     console.warn("[bot] messaggio ignorato da chat non autorizzata");
     return;
   }
   const text = msg.text?.trim();
   if (!text) {
-    await sendMessage(chatId, "Per ora leggo solo messaggi di testo.");
+    await say("Per ora leggo solo messaggi di testo.");
     return;
   }
   if (text === "/start") {
-    await sendMessage(chatId, "Scrivimi cosa devi fare e quando (es. \"calcetto venerdì alle 20\"): lo metto in calendario.");
+    await say("Scrivimi cosa devi fare e quando (es. \"calcetto venerdì alle 20\"): lo metto in calendario.");
     return;
   }
   if (await isUpdateLogged(updateId)) return; // Telegram retry of an update we already handled
 
   const logId = await createLog(text, updateId);
-  await sendTyping(chatId);
+  if (!opts.reply) await sendTyping(chatId);
 
   // A bare time right after "Altro" completes the waiting draft.
   const typed = parseTypedTime(text);
@@ -97,39 +105,79 @@ async function handleMessage(updateId: number, msg: TgMessage): Promise<void> {
     }
   }
 
+  // A bot question still open. Within 60 minutes Claude gets that exchange and
+  // says whether this message answers it (merge and complete) or not. If not,
+  // or if the question expired, the reply reminds the user: the request stays
+  // answerable for one more round, then it is closed with a notice.
+  const found = await findPendingQuestion().catch(() => null);
+  const pending = found?.row.sospeso ? found : null;
+  const storia = pending && !pending.scaduta ? pending.row.sospeso!.conversazione : [];
+
   let result;
   try {
-    result = await runAgent(text);
+    result = await runAgent(text, { dryRun: opts.dryRun, storia });
   } catch (err) {
     await updateLog(logId, { stato: STATI.errore, errore: errMsg(err) }).catch(() => {});
-    await sendMessage(chatId, `❌ Errore: ${errMsg(err)}`);
+    await say(`❌ Errore: ${errMsg(err)}`);
     return;
   }
-  const { azioni, bozze, errori, testo } = result;
+  if (found) await updateLog(found.row.id, { stato: STATI.nessuna }).catch(() => {});
+  const { azioni, bozze, errori, domanda, promemoria, rispostaSospeso, testo } = result;
+
+  // The pending request this message did not answer (moved on, or expired).
+  const lasciato = pending && !(storia.length && rispostaSospeso === true) ? pending.row.sospeso! : null;
+  let avviso: string | null = null;
+  let riproposto: Sospeso | null = null;
+  if (lasciato) {
+    const richiesta = lasciato.conversazione.find((t) => t.ruolo === "utente")?.testo ?? "richiesta";
+    if (!lasciato.ricordata && !domanda) {
+      avviso = `⚠️ ${lasciato.promemoria ?? `È rimasto in sospeso "${richiesta}": me lo dici?`}`;
+      riproposto = { ...lasciato, ricordata: true };
+    } else {
+      avviso = `⚠️ Chiusa senza risposta: "${richiesta}".`;
+    }
+  }
 
   const lines = describe(azioni);
   if (errori.length) lines.push(`⚠️ ${testo || "Qualcosa non è andato a buon fine."}`);
-  let reply = lines.join("\n");
-  if (!azioni.length && !bozze.length) reply = (errori.length ? "❌ " : "") + (testo || "Non ho trovato niente da mettere in calendario.");
+  if (domanda) lines.push(domanda);
+  if (!azioni.length && !bozze.length && !domanda) {
+    lines.splice(0, lines.length, (errori.length ? "❌ " : "") + (testo || "Non ho trovato niente da mettere in calendario."));
+  }
+  if (avviso) lines.push(avviso);
+  const reply = lines.join("\n");
 
-  if (reply) await sendMessage(chatId, reply, hasCreation(azioni) ? undoKeyboard(logId) : undefined);
+  if (reply) await say(reply, hasCreation(azioni) ? undoKeyboard(logId) : undefined);
 
   for (let i = 0; i < bozze.length; i++) {
     const d = bozze[i];
-    await sendMessage(
-      chatId,
-      `⏰ A che ora? ${d.titolo} · ${AREAS[d.area].label} · ${formatDayShort(d.data)}`,
-      timeKeyboard(logId, i)
-    );
+    await say(`⏰ A che ora? ${d.titolo} · ${AREAS[d.area].label} · ${formatDayShort(d.data)}`, timeKeyboard(logId, i));
   }
 
-  const stato: Stato = bozze.length
-    ? STATI.attesaOra
-    : azioni.length
-      ? STATI.ok
-      : errori.length ? STATI.errore : STATI.nessuna;
+  // What stays waiting for an answer on this row: a new question (with the
+  // previous exchange only if this message continued it), or the reminded one.
+  const sospeso: Sospeso | null = domanda
+    ? {
+        conversazione: [
+          ...(rispostaSospeso === true ? storia : []),
+          { ruolo: "utente" as const, testo: text },
+          { ruolo: "bot" as const, testo: domanda },
+        ].slice(-8),
+        promemoria,
+        ricordata: false,
+      }
+    : riproposto;
+
+  const stato: Stato = sospeso
+    ? STATI.attesaRisposta
+    : bozze.length
+      ? STATI.attesaOra
+      : azioni.length
+        ? STATI.ok
+        : errori.length ? STATI.errore : STATI.nessuna;
   await updateLog(logId, {
-    stato, azioni, bozze, risposta: reply, ...(errori.length ? { errore: errori.join("\n") } : {}),
+    stato, azioni, bozze, sospeso, risposta: reply,
+    ...(errori.length ? { errore: errori.join("\n") } : {}),
   });
 }
 

@@ -29,6 +29,7 @@ async function main() {
               { name: "❌ Errore", color: "red" },
               { name: "⏳ Attesa ora", color: "yellow" },
               { name: "⌨️ Attesa ora scritta", color: "orange" },
+              { name: "❓ Attesa risposta", color: "purple" },
               { name: "↩️ Annullato", color: "gray" },
               { name: "ℹ️ Nessuna azione", color: "blue" },
             ],

@@ -2,7 +2,8 @@
  * "🤖 Bot Log" database in Notion (NOTION_LOG_DB = data source ID).
  * One row per incoming Telegram message. It records what was received and
  * every action taken (with event / page IDs), and it also holds the bot's
- * state: drafts waiting for a time, and what the "Annulla" button undoes.
+ * state: drafts waiting for a time, a question waiting for an answer, and
+ * what the "Annulla" button undoes.
  */
 import { notion } from "./notion";
 import type { Area, Categoria, TipoTaskNotion } from "./config";
@@ -13,6 +14,7 @@ export const STATI = {
   errore: "❌ Errore",
   attesaOra: "⏳ Attesa ora",
   attesaOraScritta: "⌨️ Attesa ora scritta",
+  attesaRisposta: "❓ Attesa risposta",
   annullato: "↩️ Annullato",
   nessuna: "ℹ️ Nessuna azione",
 } as const;
@@ -51,6 +53,21 @@ export type Azione =
     }
   | { tipo: "evento_eliminato"; area: Area; calendarId: string; eventId: string; prima: FoundEvent };
 
+/** One turn of a pending conversation (the bot asked something). */
+export interface Turno {
+  ruolo: "utente" | "bot";
+  testo: string;
+}
+
+/** A request waiting for the user's answer to a bot question. */
+export interface Sospeso {
+  conversazione: Turno[];
+  /** Sentence shown if the user moves on, e.g. "Ross1000 è rimasto senza data: me la dici?" */
+  promemoria: string | null;
+  /** Already reminded once: next time it is closed for good. */
+  ricordata: boolean;
+}
+
 export interface LogRow {
   id: string;
   stato: Stato | null;
@@ -58,7 +75,12 @@ export interface LogRow {
   bozze: Draft[];
   /** Index of the draft waiting for a typed time ("Altro"). */
   bozzaInAttesa: number | null;
+  /** Request waiting for an answer, when Stato is "Attesa risposta". */
+  sospeso: Sospeso | null;
 }
+
+/** How long a bot question waits for an answer before the next message counts as new. */
+export const PENDING_QUESTION_MINUTES = 60;
 
 const MAX_CHUNK = 2000;
 
@@ -101,6 +123,7 @@ export async function updateLog(
     azioni?: Azione[];
     bozze?: Draft[];
     bozzaInAttesa?: number | null;
+    sospeso?: Sospeso | null;
     risposta?: string;
     errore?: string;
   }
@@ -122,12 +145,18 @@ export async function updateLog(
     const task = patch.azioni.find((a) => a.tipo === "task_creata");
     properties["Notion Task"] = { url: task && task.tipo === "task_creata" ? task.url : null };
   }
-  if (patch.bozze !== undefined || patch.bozzaInAttesa !== undefined) {
-    const current = patch.bozze === undefined || patch.bozzaInAttesa === undefined ? await getLog(id) : null;
+  if (patch.bozze !== undefined || patch.bozzaInAttesa !== undefined || patch.sospeso !== undefined) {
+    const needsCurrent =
+      patch.bozze === undefined || patch.bozzaInAttesa === undefined || patch.sospeso === undefined;
+    const current = needsCurrent ? await getLog(id) : null;
     const bozze = patch.bozze ?? current?.bozze ?? [];
     const inAttesa = patch.bozzaInAttesa !== undefined ? patch.bozzaInAttesa : current?.bozzaInAttesa ?? null;
+    const sospeso = patch.sospeso !== undefined ? patch.sospeso : current?.sospeso ?? null;
     properties.Bozza = {
-      rich_text: bozze.length ? richText(JSON.stringify({ bozze, inAttesa })) : [],
+      rich_text:
+        bozze.length || sospeso
+          ? richText(JSON.stringify({ bozze, inAttesa, ...(sospeso ? { sospeso } : {}) }))
+          : [],
     };
   }
   await notion().pages.update({ page_id: id, properties });
@@ -139,13 +168,16 @@ export async function getLog(id: string): Promise<LogRow> {
   const props = (page as any).properties ?? {};
   const azioniRaw = readText(props.Azioni);
   const bozzaRaw = readText(props.Bozza);
-  const bozza = bozzaRaw ? (JSON.parse(bozzaRaw) as { bozze: Draft[]; inAttesa: number | null }) : null;
+  const bozza = bozzaRaw
+    ? (JSON.parse(bozzaRaw) as { bozze?: Draft[]; inAttesa?: number | null; sospeso?: Sospeso })
+    : null;
   return {
     id: page.id,
     stato: (props.Stato?.select?.name as Stato) ?? null,
     azioni: azioniRaw ? (JSON.parse(azioniRaw) as Azione[]) : [],
     bozze: bozza?.bozze ?? [],
     bozzaInAttesa: bozza?.inAttesa ?? null,
+    sospeso: bozza?.sospeso ?? null,
   };
 }
 
@@ -174,6 +206,26 @@ export async function findWaitingForTypedTime(): Promise<LogRow | null> {
     page_size: 1,
   });
   return res.results[0] ? getLog(res.results[0].id) : null;
+}
+
+/**
+ * Most recent row whose bot question is still open. `scaduta` is true when
+ * it is older than PENDING_QUESTION_MINUTES: then the new message is not
+ * treated as its answer, the user is only reminded.
+ */
+export async function findPendingQuestion(): Promise<{ row: LogRow; scaduta: boolean } | null> {
+  const res = await notion().dataSources.query({
+    data_source_id: logDs(),
+    filter: { property: "Stato", select: { equals: STATI.attesaRisposta } },
+    sorts: [{ timestamp: "last_edited_time", direction: "descending" }],
+    page_size: 1,
+  });
+  const page = res.results[0];
+  if (!page) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edited = new Date((page as any).last_edited_time).getTime();
+  const scaduta = Date.now() - edited > PENDING_QUESTION_MINUTES * 60 * 1000;
+  return { row: await getLog(page.id), scaduta };
 }
 
 /** Notion page IDs travel in callback_data without dashes (64-byte limit). */
