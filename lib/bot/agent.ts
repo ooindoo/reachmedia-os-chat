@@ -29,7 +29,7 @@ COSA FARE
 - Tutto ciò che ha una data diventa un evento con crea_evento. Se il messaggio contiene più cose con una data, crea un evento per ciascuna.
 - Date relative ("venerdì", "domani", "tra due giorni", "entro il 31 gennaio") si calcolano rispetto a OGGI indicato nel messaggio (timezone Europe/Rome). Usa la tabella dei prossimi giorni. Un giorno della settimana indica la sua prossima occorrenza; oggi stesso solo se l'orario non è già passato. "Entro il X" = evento il giorno X. Se l'anno manca, usa la prossima occorrenza futura.
 - Orario: se il messaggio non indica un'ora precisa, passa ora null: il sistema chiederà l'ora all'utente con dei bottoni. Non fare domande tu e non inventare l'ora.
-- Durata: quella indicata nel messaggio, altrimenti 30 minuti (minimo 30). Se il messaggio dà un orario di fine ("dalle 11 alle 11:15", "11:00-11:15"), passa ora e ora_fine: l'orario scritto viene rispettato anche sotto i 30 minuti.
+- Durata: quella indicata esplicitamente nel messaggio, altrimenti 30 minuti (minimo 30). Non stimare la durata dal tipo di attività (calcetto, cena, riunione: 30 minuti se il messaggio non dice altro). Se il messaggio dà un orario di fine ("dalle 11 alle 11:15", "11:00-11:15"), passa ora e ora_fine: l'orario scritto viene rispettato anche sotto i 30 minuti.
 - Titolo: breve e chiaro, senza data né ora (es. "Calcetto", "Chiamare Sandro", "Campagna NL Squale SA", "Pagare bollo auto"). Per il lavoro clienti includi il nome del cliente.
 
 AREA (decide il calendario: conta l'area, non il tipo di cosa)

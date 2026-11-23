@@ -8,6 +8,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// update_ids already received by this instance. The Bot Log check in the
+// handler covers retries over time; this covers two copies of the same update
+// arriving at the same moment, before the first one is written to the log.
+const seen = new Set<number>();
+function firstDelivery(updateId: number): boolean {
+  if (seen.has(updateId)) return false;
+  seen.add(updateId);
+  if (seen.size > 1000) seen.delete(seen.values().next().value as number);
+  return true;
+}
+
 function secretMatches(received: string | null): boolean {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!expected || !received) return false;
@@ -27,7 +38,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
   const update = (await req.json().catch(() => null)) as TgUpdate | null;
-  if (update && typeof update.update_id === "number") {
+  if (update && typeof update.update_id === "number" && firstDelivery(update.update_id)) {
     waitUntil(
       handleUpdate(update).catch((err) => console.error("[bot] errore non gestito:", err?.message ?? err))
     );
