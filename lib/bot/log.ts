@@ -250,7 +250,12 @@ export async function getRecentExchanges(since?: string): Promise<Turno[]> {
   const from = since ?? new Date(Date.now() - HISTORY_MINUTES * 60 * 1000).toISOString();
   const res = await notion().dataSources.query({
     data_source_id: logDs(),
-    filter: { timestamp: "created_time", created_time: { on_or_after: from } },
+    filter: {
+      and: [
+        { timestamp: "created_time", created_time: { on_or_after: from } },
+        { property: "Messaggio", title: { does_not_contain: MAIL_SKIP_PREFIX.trim() } },
+      ],
+    },
     sorts: [{ timestamp: "created_time", direction: "descending" }],
     page_size: MAX_HISTORY,
   });
@@ -286,4 +291,30 @@ export async function isRecentDuplicate(text: string): Promise<boolean> {
 /** Notion page IDs travel in callback_data without dashes (64-byte limit). */
 export function compactId(id: string): string {
   return id.replace(/-/g, "");
+}
+
+// ── Client mail that needs no reply (decided by Claude) ───────────────────────
+// One row per thread + last message, so the same mail is not sent to Claude
+// again at every check. Kept out of the conversation history.
+
+const MAIL_SKIP_PREFIX = "📧 Mail scartata ";
+
+export async function isMailSkipped(key: string): Promise<boolean> {
+  const res = await notion().dataSources.query({
+    data_source_id: logDs(),
+    filter: { property: "Messaggio", title: { equals: `${MAIL_SKIP_PREFIX}${key}` } },
+    page_size: 1,
+  });
+  return res.results.length > 0;
+}
+
+export async function logSkippedMail(key: string, dettaglio: string): Promise<void> {
+  await notion().pages.create({
+    parent: { type: "data_source_id", data_source_id: logDs() },
+    properties: {
+      Messaggio: { title: richText(`${MAIL_SKIP_PREFIX}${key}`) },
+      Stato: { select: { name: STATI.nessuna } },
+      Risposta: { rich_text: richText(dettaglio) },
+    },
+  });
 }

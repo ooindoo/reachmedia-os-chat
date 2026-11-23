@@ -11,6 +11,7 @@ import { AREAS } from "./config";
 import { runAgent } from "./agent";
 import { markDoneInMessage } from "./briefing";
 import { markTaskDone } from "./notion";
+import { emailProblems, emailSection, type EmailCheckResult } from "./email-check";
 import { createFromDraft, describe, undoCreations } from "./actions";
 import {
   STATI, compactId, createLog, findPendingQuestion, findWaitingForTypedTime, getLog, getRecentExchanges,
@@ -18,8 +19,8 @@ import {
   type Azione, type LogRow, type Sospeso, type Stato,
 } from "./log";
 import {
-  answerCallback, editMessage, sendMessage, sendTyping,
-  type InlineKeyboard, type TgCallbackQuery, type TgMessage, type TgUpdate,
+  answerCallback, editMessage, esc, messageToHtml, sendMessage, sendTyping,
+  type InlineKeyboard, type SendOptions, type TgCallbackQuery, type TgMessage, type TgUpdate,
 } from "./telegram";
 import { formatDayShort } from "../tz";
 
@@ -58,6 +59,16 @@ function timeKeyboard(logId: string, bozza: number): InlineKeyboard {
   ];
 }
 
+/** HTML lines answering "controlla le mail". */
+function mailReply(m: EmailCheckResult): string[] {
+  if (!m.caselle.length) {
+    return m.errori.length ? emailProblems(m) : ["📧 Gmail non è ancora collegato."];
+  }
+  const lines = m.pending.length ? emailSection(m.pending) : ["📧 Nessuna mail cliente da rispondere."];
+  if (m.chiuse.length) lines.push(`✅ Chiuse ${m.chiuse.length} task: hai già risposto.`);
+  return [...lines, ...emailProblems(m)];
+}
+
 function hasCreation(azioni: Azione[]): boolean {
   return azioni.some((a) => a.tipo === "evento_creato" && !a.annullato);
 }
@@ -66,7 +77,7 @@ export interface HandlerOptions {
   /** Decide everything without calendar/Notion task writes (log rows are still written). */
   dryRun?: boolean;
   /** Replaces the Telegram reply for text messages (used by tests). */
-  reply?: (text: string, keyboard?: InlineKeyboard) => Promise<void>;
+  reply?: (text: string, keyboard?: InlineKeyboard, opts?: SendOptions) => Promise<void>;
   /** Tests: only conversation history created after this ISO time. */
   historySince?: string;
 }
@@ -80,7 +91,8 @@ export async function handleUpdate(update: TgUpdate, opts: HandlerOptions = {}):
 
 async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOptions): Promise<void> {
   const chatId = msg.chat.id;
-  const say = opts.reply ?? (async (t: string, k?: InlineKeyboard) => { await sendMessage(chatId, t, k); });
+  const say = opts.reply ??
+    (async (t: string, k?: InlineKeyboard, o?: SendOptions) => { await sendMessage(chatId, t, k, o); });
   if (!isAllowed(chatId, msg.from?.id)) {
     console.warn("[bot] messaggio ignorato da chat non autorizzata");
     return;
@@ -138,7 +150,7 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
     return;
   }
   if (found) await updateLog(found.row.id, { stato: STATI.nessuna }).catch(() => {});
-  const { azioni, bozze, errori, domanda, promemoria, rispostaSospeso, testo } = result;
+  const { azioni, bozze, errori, domanda, promemoria, rispostaSospeso, testo, mail } = result;
 
   // The pending request this message did not answer (moved on, or expired).
   const lasciato = pending && (pending.scaduta || rispostaSospeso === false) ? pending.row.sospeso! : null;
@@ -157,13 +169,21 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
   const lines = describe(azioni);
   if (errori.length) lines.push(`⚠️ ${testo || "Qualcosa non è andato a buon fine."}`);
   if (domanda) lines.push(domanda);
-  if (!azioni.length && !bozze.length && !domanda) {
+  if (!azioni.length && !bozze.length && !domanda && !mail) {
     lines.splice(0, lines.length, (errori.length ? "❌ " : "") + (testo || "Non ho trovato niente da mettere in calendario."));
+  } else if (mail && testo && !azioni.length && !domanda) {
+    lines.push(testo);
   }
   if (avviso) lines.push(avviso);
   const reply = lines.join("\n");
 
-  if (reply) await say(reply, hasCreation(azioni) ? undoKeyboard(logId) : undefined);
+  // With a mail check the reply is HTML (links to the drafts): every other line is escaped.
+  if (mail) {
+    const html = [...lines.map(esc), ...mailReply(mail)].join("\n");
+    await say(html, hasCreation(azioni) ? undoKeyboard(logId) : undefined, { html: true });
+  } else if (reply) {
+    await say(reply, hasCreation(azioni) ? undoKeyboard(logId) : undefined);
+  }
 
   const domandeOra: string[] = [];
   for (let i = 0; i < bozze.length; i++) {
@@ -256,7 +276,7 @@ async function handleCallback(updateId: number, cq: TgCallbackQuery): Promise<vo
       await updateLog(row.id, { azioni, ...(stillActive ? {} : { stato: STATI.annullato }) });
       await answerCallback(cq.id, "Annullato");
       if (cq.message) {
-        await editMessage(chatId, cq.message.message_id, `${cq.message.text ?? ""}\n↩️ Annullato`);
+        await editMessage(chatId, cq.message.message_id, `${messageToHtml(cq.message)}\n↩️ Annullato`, undefined, { html: true });
       }
       return;
     }
@@ -276,8 +296,9 @@ async function handleTaskDone(
     const titolo = await markTaskDone(taskHex);
     await answerCallback(cq.id, "Fatto ✅");
     if (cq.message?.text) {
-      const next = markDoneInMessage(cq.message.text, cq.message.reply_markup?.inline_keyboard ?? [], n);
-      await editMessage(chatId, cq.message.message_id, next.text, next.keyboard);
+      // The briefing is HTML: rebuild it with its links before marking the line.
+      const next = markDoneInMessage(messageToHtml(cq.message), cq.message.reply_markup?.inline_keyboard ?? [], n);
+      await editMessage(chatId, cq.message.message_id, next.text, next.keyboard, { html: true });
     }
     if (!(await isUpdateLogged(updateId))) {
       const logId = await createLog(`✅ Fatto: ${titolo}`, updateId);

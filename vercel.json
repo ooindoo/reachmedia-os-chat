@@ -7,13 +7,16 @@
       "maxDuration": 15
     },
     "app/api/telegram/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "app/api/cron/briefing/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
     },
     "app/api/cron/sera/route.ts": {
-      "maxDuration": 60
+      "maxDuration": 300
+    },
+    "app/api/cron/mail/route.ts": {
+      "maxDuration": 300
     }
   },
   "schedules": {
@@ -21,6 +24,12 @@
       "schedule": "0 8 * * *",
       "timezone": "Europe/Rome",
       "path": "/api/cron/briefing",
+      "requestMethod": "GET"
+    },
+    "mail-pomeriggio": {
+      "schedule": "0 14 * * *",
+      "timezone": "Europe/Rome",
+      "path": "/api/cron/mail",
       "requestMethod": "GET"
     },
     "piano-sera": {

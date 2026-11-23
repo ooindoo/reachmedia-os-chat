@@ -9,12 +9,16 @@
  *  📅 Il resto   – the other events of the day, by time
  *  📌 Da recuperare (morning only) – other earlier open tasks, max 3 + "e altre N"
  *
+ *  📧 Da rispondere – client mail without a reply (email-check.ts), passed in ready
+ *
  * Morning items backed by a Notion task get a "✅ Fatto" button (see handler.ts).
+ * Messages are Telegram HTML: every dynamic text goes through esc().
+ * Email tasks (with "Link Gmail") stay out of "Le 3 cose" and "Da recuperare".
  */
 import { listAllCalendars, listEventsOn, type DayEvent } from "./calendar";
 import { getOpenTasksUntil, type OpenTask } from "./notion";
 import { shiftDate, todayRome, weekdayIt } from "../tz";
-import type { InlineKeyboard } from "./telegram";
+import { esc, type InlineKeyboard } from "./telegram";
 
 const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
 const MAX_COSE = 3;
@@ -74,7 +78,7 @@ export async function buildDayPlan(giorno: string): Promise<DayPlan> {
   }
   eventi.sort((a, b) => (a.ora ?? "").localeCompare(b.ora ?? ""));
 
-  const tasks = await getOpenTasksUntil(giorno);
+  const tasks = (await getOpenTasksUntil(giorno)).filter((t) => !t.email);
   // Link task and event: by the ID saved on the event, or (events made by hand)
   // by the same title on the same day. A linked event shows the task's button.
   const titoloKey = (t: string) => t.trim().toLowerCase().replace(/\s+/g, " ");
@@ -116,11 +120,11 @@ export async function buildDayPlan(giorno: string): Promise<DayPlan> {
 }
 
 function rigaCosa(c: Cosa): string {
-  return [c.ora, c.titolo].filter(Boolean).join(" ") + (c.calendario ? ` — ${c.calendario}` : "");
+  return esc([c.ora, c.titolo].filter(Boolean).join(" ") + (c.calendario ? ` — ${c.calendario}` : ""));
 }
 
 function rigaEvento(e: DayEvent): string {
-  return `• ${e.ora ?? "tutto il giorno"} ${e.titolo} — ${e.calendario}`;
+  return esc(`• ${e.ora ?? "tutto il giorno"} ${e.titolo} — ${e.calendario}`);
 }
 
 function bottone(n: number, titolo: string, taskId: string) {
@@ -128,12 +132,19 @@ function bottone(n: number, titolo: string, taskId: string) {
   return [{ text: `✅ Fatto ${n}. ${corto}`, callback_data: `f:${norm(taskId)}:${n}` }];
 }
 
-/** 8:00 message, with a "✅ Fatto" button for each numbered item backed by a Notion task. */
-export async function buildMorningBriefing(giorno: string = todayRome()): Promise<{ text: string; keyboard: InlineKeyboard }> {
+/**
+ * 8:00 message (HTML), with a "✅ Fatto" button for each numbered item backed
+ * by a Notion task. mail: ready HTML lines of the mail check ("📧 Da rispondere",
+ * warnings), shown at the end.
+ */
+export async function buildMorningBriefing(
+  giorno: string = todayRome(), mail: string[] = []
+): Promise<{ text: string; keyboard: InlineKeyboard }> {
   const p = await buildDayPlan(giorno);
   const titolo = `☀️ Buongiorno! ${dataLunga(giorno)}`;
   if (!p.eventi.length && !p.cose.length && !p.daRecuperare.length) {
-    return { text: `${titolo}\nNiente in calendario oggi e niente da recuperare.`, keyboard: [] };
+    const vuoto = `${titolo}\nNiente in calendario oggi e niente da recuperare.`;
+    return { text: [vuoto, ...(mail.length ? ["", ...mail] : [])].join("\n"), keyboard: [] };
   }
 
   const lines = [titolo];
@@ -154,21 +165,26 @@ export async function buildMorningBriefing(giorno: string = todayRome()): Promis
     lines.push("", "📌 Da recuperare");
     for (const t of p.daRecuperare.slice(0, MAX_RECUPERARE)) {
       n++;
-      lines.push(`${n}. ${t.titolo}`);
+      lines.push(`${n}. ${esc(t.titolo)}`);
       keyboard.push(bottone(n, t.titolo, t.id));
     }
     const altre = p.daRecuperare.length - MAX_RECUPERARE;
     if (altre > 0) lines.push(`e altre ${altre}`);
   }
+  if (mail.length) lines.push("", ...mail);
   return { text: lines.join("\n"), keyboard };
 }
 
-/** 21:00 message about tomorrow: the 3 things and the other events. No buttons. */
-export async function buildEveningPlan(oggi: string = todayRome()): Promise<string> {
+/**
+ * 21:00 message (HTML) about tomorrow: the 3 things and the other events, then
+ * the mail still without a reply (ready HTML lines). No buttons.
+ */
+export async function buildEveningPlan(oggi: string = todayRome(), mail: string[] = []): Promise<string> {
   const domani = shiftDate(oggi, 1);
   const p = await buildDayPlan(domani);
   if (!p.eventi.length && !p.cose.length) {
-    return `🌙 Domani (${dataLunga(domani)}) niente in calendario e niente da fare.`;
+    const vuoto = `🌙 Domani (${dataLunga(domani)}) niente in calendario e niente da fare.`;
+    return [vuoto, ...(mail.length ? ["", ...mail] : [])].join("\n");
   }
   const lines = [`🌙 Domani · ${dataLunga(domani)}`];
   if (p.cose.length) {
@@ -177,10 +193,11 @@ export async function buildEveningPlan(oggi: string = todayRome()): Promise<stri
   if (p.resto.length) {
     lines.push("", "📅 Il resto di domani", ...p.resto.map(rigaEvento));
   }
+  if (mail.length) lines.push("", ...mail);
   return lines.join("\n");
 }
 
-/** After "✅ Fatto": mark line n as done and drop its button. */
+/** After "✅ Fatto": mark line n as done and drop its button. Works on the HTML text too. */
 export function markDoneInMessage(text: string, keyboard: InlineKeyboard, n: number) {
   const prefix = `${n}. `;
   const nextText = text

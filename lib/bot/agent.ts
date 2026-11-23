@@ -1,6 +1,7 @@
 /**
  * Claude agent for the Telegram bot: turns a short message into calendar
- * actions through 4 wrapped tools (create, search, update, delete).
+ * actions through wrapped tools (create, search, update, delete), plus the
+ * on-demand client mail check.
  * Claude picks area, reminder category, date and time; the code computes
  * calendars, reminder minutes and durations, and enforces the rules.
  */
@@ -13,6 +14,7 @@ import { createEvent, deleteEvent, patchEvent, searchEvents, nextTiming, type Fo
 import { createFromDraft, planFromDraft } from "./actions";
 import { getActiveClients, updateTaskDeadline } from "./notion";
 import type { Azione, Draft } from "./log";
+import { runEmailCheck, type EmailCheckResult } from "./email-check";
 import { formatDayShort, nowRome, shiftDate, weekdayIt } from "../tz";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -68,6 +70,9 @@ Quando il sistema ti segnala una tua domanda ancora senza risposta, chiama sempr
 
 MODIFICARE O ELIMINARE
 Usa prima cerca_eventi, poi modifica_evento o elimina_evento con l'event_id trovato. "Dalle 11 alle 11:15" su un evento esistente = nuova_ora 11:00 e nuova_ora_fine 11:15 (non spostare l'inizio a 11:15). Se più eventi diversi corrispondono e la conversazione non chiarisce quale, non toccare nulla e rispondi elencandoli in breve.
+
+MAIL DEI CLIENTI
+Se l'utente chiede di controllare le mail ("controlla le mail", "ci sono mail da rispondere?", "guarda la posta"), usa controlla_mail. Il sistema mostra da solo l'elenco: non riscriverlo. Non puoi inviare mail né modificarle: il controllo prepara solo bozze e task.
 
 RISPOSTA FINALE
 Il sistema mostra già all'utente il riepilogo delle azioni eseguite. Dopo i tool rispondi con una sola riga breve, o niente se non serve. Se il messaggio non contiene nulla da fare, rispondi in una riga.`;
@@ -174,6 +179,12 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "controlla_mail",
+    description:
+      "Controlla subito le mail dei clienti senza risposta: prepara le bozze (mai inviate) e le task come i controlli automatici, e chiude le task delle mail a cui l'utente ha già risposto.",
+    input_schema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
     name: "elimina_evento",
     description: "Elimina un evento trovato con cerca_eventi. La task Notion collegata, se c'è, non viene toccata.",
     input_schema: {
@@ -213,6 +224,8 @@ export interface AgentResult {
   promemoria: string | null;
   /** With a pending question: did this message answer it? null = no pending question. */
   rispostaSospeso: boolean | null;
+  /** Result of controlla_mail, when it ran. */
+  mail: EmailCheckResult | null;
   testo: string;
 }
 
@@ -243,6 +256,7 @@ interface RunState {
   haSospeso: boolean;
   rispostaSospeso: boolean | null;
   found: Map<string, FoundEvent>;
+  mail: EmailCheckResult | null;
 }
 
 async function runTool(name: string, input: Input, st: RunState): Promise<string> {
@@ -393,6 +407,13 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
       return "Evento eliminato.";
     }
 
+    case "controlla_mail": {
+      if (!st.mail) st.mail = await runEmailCheck({ dryRun: st.dryRun });
+      const m = st.mail;
+      if (!m.caselle.length) return "Gmail non è collegato o il controllo non è riuscito: il sistema lo dice all'utente.";
+      return `Controllo fatto: ${m.pending.length} mail da rispondere (${m.pending.filter((x) => x.nuova).length} nuove), ${m.chiuse.length} task chiuse. Il sistema mostra l'elenco all'utente: rispondi con al massimo una riga o niente.`;
+    }
+
     default:
       throw new ToolInputError(`tool sconosciuto: ${name}`);
   }
@@ -410,6 +431,7 @@ export async function runAgent(
   const st: RunState = {
     dryRun: opts.dryRun === true, azioni: [], bozze: [], errori: [],
     domanda: null, promemoria: null, haSospeso: opts.sospeso === true, rispostaSospeso: null, found: new Map(),
+    mail: null,
   };
   const messages: Anthropic.MessageParam[] = storia.map((t) => ({
     role: t.ruolo === "utente" ? ("user" as const) : ("assistant" as const),

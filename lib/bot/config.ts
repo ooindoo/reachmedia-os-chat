@@ -71,3 +71,34 @@ export const BOT_MODEL = "claude-sonnet-5-5";
  * latest version.
  */
 export const GCAL_TOOLKIT_VERSION = process.env.COMPOSIO_GCAL_TOOLKIT_VERSION || null;
+
+// ── Gmail (read + drafts only, never send) ────────────────────────────────────
+/** The two mailboxes, each a separate Composio connected account (same user as the calendar). */
+export const MAILBOXES = {
+  arditnwork: { email: "arditnwork@gmail.com", accountEnv: "COMPOSIO_GMAIL_ACCOUNT_ID" },
+  agency: { email: "email.ma.agency@gmail.com", accountEnv: "COMPOSIO_GMAIL_AGENCY_ACCOUNT_ID" },
+} as const;
+export type Mailbox = keyof typeof MAILBOXES;
+export const MAILBOX_KEYS = Object.keys(MAILBOXES) as Mailbox[];
+
+/** Clients whose mail lives on email.ma.agency; every other client is on arditnwork. */
+const AGENCY_CLIENTS = ["luxyt"];
+export function mailboxForClient(nome: string): Mailbox {
+  return AGENCY_CLIENTS.includes(nome.trim().toLowerCase()) ? "agency" : "arditnwork";
+}
+
+/**
+ * Senders shared by several clients (an agency working for more of them):
+ * the mail goes to the client named in it; if none or more than one is named,
+ * the task has no client and this name in the title.
+ */
+export const SHARED_SENDERS: Record<string, string> = { "istudios.it": "iStudios" };
+
+/** Composio Gmail toolkit version, pinned like the calendar one. */
+export const GMAIL_TOOLKIT_VERSION = "20261120_00";
+/** Only client mail of the last N days is looked at. */
+export const EMAIL_LOOKBACK_DAYS = 14;
+/** At most this many new drafts per check (the first run could find a backlog). */
+export const MAX_DRAFTS_PER_CHECK = 10;
+/** Lines in the "📧 Da rispondere" section before "e altre N". */
+export const MAX_EMAIL_LINES = 5;
