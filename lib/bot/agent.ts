@@ -29,7 +29,7 @@ COSA FARE
 - Tutto ciò che ha una data diventa un evento con crea_evento. Se il messaggio contiene più cose con una data, crea un evento per ciascuna.
 - Date relative ("venerdì", "domani", "tra due giorni", "entro il 31 gennaio") si calcolano rispetto a OGGI indicato nel messaggio (timezone Europe/Rome). Usa la tabella dei prossimi giorni. Un giorno della settimana indica la sua prossima occorrenza; oggi stesso solo se l'orario non è già passato. "Entro il X" = evento il giorno X. Se l'anno manca, usa la prossima occorrenza futura.
 - Orario: se il messaggio non indica un'ora precisa, passa ora null: il sistema chiederà l'ora all'utente con dei bottoni. Non fare domande tu e non inventare l'ora.
-- Durata: quella indicata nel messaggio, altrimenti 30 minuti.
+- Durata: quella indicata nel messaggio, altrimenti 30 minuti (minimo 30). Se il messaggio dà un orario di fine ("dalle 11 alle 11:15", "11:00-11:15"), passa ora e ora_fine: l'orario scritto viene rispettato anche sotto i 30 minuti.
 - Titolo: breve e chiaro, senza data né ora (es. "Calcetto", "Chiamare Sandro", "Campagna NL Squale SA", "Pagare bollo auto"). Per il lavoro clienti includi il nome del cliente.
 
 AREA (decide il calendario: conta l'area, non il tipo di cosa)
@@ -58,13 +58,16 @@ tipo_attivita: solo per cosa_da_fare, il valore della lista che descrive meglio 
 INFORMAZIONI MANCANTI
 Se manca un'informazione indispensabile (cosa fare, oppure la data) usa chiedi_informazione con una domanda breve e non creare nulla per quella richiesta. In promemoria scrivi la frase che il sistema userà se l'utente passa ad altro, nel formato "<cosa> è rimasto senza <informazione>: me la dici?" (es. "Ross1000 è rimasto senza data: me la dici?"). Se manca solo l'ora non chiedere: passa ora null (il sistema mostra i bottoni).
 
+CONVERSAZIONE RECENTE
+Prima del messaggio nuovo trovi gli ultimi scambi con l'utente (i suoi messaggi e le tue risposte, con le azioni già fatte). Usali per capire i riferimenti: "modifica l'orario", "spostalo", "sì, quello", "anche domani" di solito riguardano l'ultimo evento creato o nominato. Non rifare le azioni degli scambi precedenti: esegui solo ciò che chiede il messaggio nuovo.
+
 DOMANDA IN SOSPESO
-Se nella conversazione hai già fatto una domanda, chiama sempre domanda_in_sospeso per dire se il nuovo messaggio è la risposta. Il nuovo messaggio può essere:
+Quando il sistema ti segnala una tua domanda ancora senza risposta, chiama sempre domanda_in_sospeso per dire se il nuovo messaggio è la risposta. Il nuovo messaggio può essere:
 - la risposta: unisci la risposta alla richiesta originale e completa l'azione (es. "Inserire gli ospiti su Ross1000" + "domani alle 10" → un solo evento con quel titolo, domani alle 10:00). Se manca ancora qualcosa, chiedi di nuovo.
 - una richiesta nuova e scollegata (descrive un'altra cosa da fare): gestisci solo il nuovo messaggio e ignora del tutto la richiesta in sospeso, senza mescolarle e senza creare niente per quella.
 
 MODIFICARE O ELIMINARE
-Usa prima cerca_eventi, poi modifica_evento o elimina_evento con l'event_id trovato. Se più eventi corrispondono e non è chiaro quale, non toccare nulla e rispondi elencandoli in breve.
+Usa prima cerca_eventi, poi modifica_evento o elimina_evento con l'event_id trovato. "Dalle 11 alle 11:15" su un evento esistente = nuova_ora 11:00 e nuova_ora_fine 11:15 (non spostare l'inizio a 11:15). Se più eventi diversi corrispondono e la conversazione non chiarisce quale, non toccare nulla e rispondi elencandoli in breve.
 
 RISPOSTA FINALE
 Il sistema mostra già all'utente il riepilogo delle azioni eseguite. Dopo i tool rispondi con una sola riga breve, o niente se non serve. Se il messaggio non contiene nulla da fare, rispondi in una riga.`;
@@ -82,6 +85,7 @@ const TOOLS: Anthropic.Tool[] = [
         data: { type: "string", description: "YYYY-MM-DD" },
         ora: { type: ["string", "null"], description: "HH:MM (24h) oppure null se il messaggio non indica l'ora" },
         durata_minuti: { type: "integer", description: "Durata in minuti, 30 se non indicata" },
+        ora_fine: { type: ["string", "null"], description: "HH:MM se il messaggio indica l'orario di fine, altrimenti null" },
         categoria_promemoria: { type: "string", enum: [...CATEGORIE] },
         cliente: { type: ["string", "null"], description: "Nome esatto dalla lista clienti attivi, oppure null" },
         tipo: {
@@ -97,7 +101,7 @@ const TOOLS: Anthropic.Tool[] = [
         note: { type: ["string", "null"], description: "Dettagli utili dal messaggio, oppure null" },
       },
       required: [
-        "titolo", "area", "data", "ora", "durata_minuti", "categoria_promemoria",
+        "titolo", "area", "data", "ora", "durata_minuti", "ora_fine", "categoria_promemoria",
         "cliente", "tipo", "tipo_attivita", "note",
       ],
       additionalProperties: false,
@@ -130,12 +134,13 @@ const TOOLS: Anthropic.Tool[] = [
         nuova_data: { type: ["string", "null"], description: "YYYY-MM-DD" },
         nuova_ora: { type: ["string", "null"], description: "HH:MM" },
         nuova_durata_minuti: { type: ["integer", "null"] },
+        nuova_ora_fine: { type: ["string", "null"], description: "HH:MM: nuovo orario di fine, se indicato" },
         nuova_area: { type: ["string", "null"], enum: [...AREA_KEYS, null] },
         categoria_promemoria: { type: ["string", "null"], enum: [...CATEGORIE, null] },
       },
       required: [
         "event_id", "nuovo_titolo", "nuova_data", "nuova_ora",
-        "nuova_durata_minuti", "nuova_area", "categoria_promemoria",
+        "nuova_durata_minuti", "nuova_ora_fine", "nuova_area", "categoria_promemoria",
       ],
       additionalProperties: false,
     },
@@ -257,6 +262,7 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
         data,
         ora,
         durataMinuti: Number.isFinite(input.durata_minuti) ? Number(input.durata_minuti) : 30,
+        oraFine: str(input.ora_fine) && TIME_RE.test(str(input.ora_fine)!) ? str(input.ora_fine) : null,
         categoria: input.categoria_promemoria,
         cliente: str(input.cliente),
         tipoAttivita: isTipoAttivita(input.tipo_attivita) ? input.tipo_attivita : null,
@@ -279,7 +285,6 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
       const da = str(input.da);
       const a = str(input.a);
       if (!da || !DATE_RE.test(da) || !a || !DATE_RE.test(a)) throw new ToolInputError("intervallo date non valido");
-      if (st.dryRun) return "Nessun evento trovato (prova senza scritture).";
       const results = await searchEvents({ testo: str(input.testo), da, a, area: isArea(input.area) ? input.area : null });
       for (const r of results) st.found.set(r.eventId, r);
       if (!results.length) return "Nessun evento trovato.";
@@ -298,11 +303,14 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
       const nuovaOra = str(input.nuova_ora);
       if (nuovaData && !DATE_RE.test(nuovaData)) throw new ToolInputError("nuova_data non valida");
       if (nuovaOra && !TIME_RE.test(nuovaOra)) throw new ToolInputError("nuova_ora non valida");
+      const nuovaOraFine = str(input.nuova_ora_fine);
+      if (nuovaOraFine && !TIME_RE.test(nuovaOraFine)) throw new ToolInputError("nuova_ora_fine non valida");
       const changes = {
         titolo: str(input.nuovo_titolo) ?? undefined,
         data: nuovaData ?? undefined,
         ora: nuovaOra ?? undefined,
         durataMinuti: Number.isFinite(input.nuova_durata_minuti) ? Number(input.nuova_durata_minuti) : undefined,
+        oraFine: nuovaOraFine ?? undefined,
         categoria: isCategoria(input.categoria_promemoria) ? input.categoria_promemoria : undefined,
       };
       const nuovaArea: Area | null = isArea(input.nuova_area) && input.nuova_area !== ev.area ? input.nuova_area : null;
@@ -312,9 +320,16 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
         const t = nextTiming(ev, changes);
         const categoria = changes.categoria ?? ev.categoria;
         if (!categoria) throw new ToolInputError("serve categoria_promemoria per ricreare l'evento in un'altra area");
+        if (st.dryRun) {
+          st.azioni.push({
+            tipo: "evento_ricreato", daArea: ev.area, area: nuovaArea, prima: ev, calendarId: AREAS[nuovaArea].calendarId,
+            eventId: "DRY-RUN", titolo: changes.titolo ?? ev.titolo, data: t.data, ora: t.ora, fineOra: t.fineOra,
+          });
+          return `Evento ricreato in ${AREAS[nuovaArea].label}, vecchio eliminato.`;
+        }
         const created = await createEvent({
           area: nuovaArea, titolo: changes.titolo ?? ev.titolo, data: t.data, ora: t.ora,
-          durataMinuti: t.durata, categoria, descrizione: ev.descrizione,
+          durataMinuti: t.durata, durataEsatta: true, categoria, descrizione: ev.descrizione,
           notionPageId: ev.notionPageId ?? undefined,
           tipo: ev.tipo ?? undefined,
         });
@@ -331,13 +346,24 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
         return `Evento ricreato in ${AREAS[nuovaArea].label} (nuovo event_id ${created.eventId}), vecchio eliminato.`;
       }
 
-      const r = await patchEvent(ev, changes);
-      if (ev.notionPageId && r.timingChanged) {
-        await updateTaskDeadline(ev.notionPageId, r.data, r.ora).catch(() => {});
+      let r: { titolo: string; data: string; ora: string; fineOra: string };
+      if (st.dryRun) {
+        const t = nextTiming(ev, changes);
+        r = { titolo: changes.titolo ?? ev.titolo, data: t.data, ora: t.ora, fineOra: t.fineOra };
+      } else {
+        const p = await patchEvent(ev, changes);
+        if (ev.notionPageId && p.timingChanged) {
+          await updateTaskDeadline(ev.notionPageId, p.data, p.ora).catch(() => {});
+        }
+        r = p;
       }
+      // Several edits of the same event in one message: one line in the reply, original "prima" kept.
+      const previous = st.azioni.findIndex((a) => a.tipo === "evento_modificato" && a.eventId === ev.eventId);
+      const prima = previous >= 0 ? (st.azioni[previous] as Extract<Azione, { tipo: "evento_modificato" }>).prima : ev;
+      if (previous >= 0) st.azioni.splice(previous, 1);
       st.azioni.push({
         tipo: "evento_modificato", area: ev.area, calendarId: ev.calendarId, eventId: ev.eventId,
-        prima: ev, titolo: r.titolo, data: r.data, ora: r.ora, fineOra: r.fineOra,
+        prima, titolo: r.titolo, data: r.data, ora: r.ora, fineOra: r.fineOra,
       });
       return `Evento modificato: ${r.titolo}, ${formatDayShort(r.data)} ${r.ora}–${r.fineOra}.`;
     }
@@ -361,7 +387,7 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
     case "elimina_evento": {
       const ev = st.found.get(String(input.event_id));
       if (!ev) throw new ToolInputError("event_id sconosciuto: usa prima cerca_eventi");
-      await deleteEvent(ev.calendarId, ev.eventId);
+      if (!st.dryRun) await deleteEvent(ev.calendarId, ev.eventId);
       st.found.delete(ev.eventId);
       st.azioni.push({ tipo: "evento_eliminato", area: ev.area, calendarId: ev.calendarId, eventId: ev.eventId, prima: ev });
       return "Evento eliminato.";
@@ -376,21 +402,21 @@ async function runTool(name: string, input: Input, st: RunState): Promise<string
 
 export async function runAgent(
   text: string,
-  opts: { dryRun?: boolean; storia?: StoriaTurno[] } = {}
+  opts: { dryRun?: boolean; storia?: StoriaTurno[]; sospeso?: boolean } = {}
 ): Promise<AgentResult> {
-  // A pending exchange (user request → bot question) goes first as real turns,
-  // so Claude can tell whether the new message answers it or is a new request.
+  // Recent exchanges (user message → bot reply) go first as real turns, so
+  // Claude can resolve references and tell an answer from a new request.
   const storia = opts.storia ?? [];
   const st: RunState = {
     dryRun: opts.dryRun === true, azioni: [], bozze: [], errori: [],
-    domanda: null, promemoria: null, haSospeso: storia.length > 0, rispostaSospeso: null, found: new Map(),
+    domanda: null, promemoria: null, haSospeso: opts.sospeso === true, rispostaSospeso: null, found: new Map(),
   };
   const messages: Anthropic.MessageParam[] = storia.map((t) => ({
     role: t.ruolo === "utente" ? ("user" as const) : ("assistant" as const),
     content: t.ruolo === "utente" ? `MESSAGGIO: ${t.testo}` : t.testo,
   }));
-  const nota = storia.length
-    ? "\n(Sopra c'è una tua domanda ancora senza risposta: questo messaggio può essere la risposta oppure una richiesta nuova.)"
+  const nota = st.haSospeso
+    ? "\n(La tua ultima domanda è ancora senza risposta: questo messaggio può essere la risposta oppure una richiesta nuova. Chiama domanda_in_sospeso.)"
     : "";
   messages.push({ role: "user", content: `${await contextBlock()}${nota}\n\nMESSAGGIO: ${text}` });
 

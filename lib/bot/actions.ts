@@ -6,11 +6,20 @@ import { AREAS, MIN_DURATION_MINUTES, isTipoAttivita } from "./config";
 import { createEvent, deleteEvent } from "./calendar";
 import { addEventLink, createTask, findActiveClient, findAirbnbClient, trashPage } from "./notion";
 import type { Azione, Draft } from "./log";
-import { addMinutesLocal, formatDayShort } from "../tz";
+import { addMinutesLocal, formatDayShort, minutesBetweenLocal } from "../tz";
 
 /** Client for the task: the one named, or for Airbnb to-dos the active Airbnb client. */
 async function taskClient(d: Draft) {
   return (await findActiveClient(d.cliente)) ?? (d.area === "airbnb" ? await findAirbnbClient() : null);
+}
+
+/** Duration of a draft: from an explicit end time (kept as written) or the given minutes. */
+function durataDi(d: Draft, ora: string): { durataMinuti: number; durataEsatta: boolean } {
+  if (d.oraFine) {
+    const m = minutesBetweenLocal(d.data, ora, d.data, d.oraFine);
+    if (m > 0) return { durataMinuti: m, durataEsatta: true };
+  }
+  return { durataMinuti: d.durataMinuti, durataEsatta: false };
 }
 
 /** A "cosa da fare" gets a Notion task, except personal reminders (calendar only). */
@@ -52,7 +61,7 @@ export async function createFromDraft(d: Draft, ora: string, bozza?: number): Pr
 
   try {
     const ev = await createEvent({
-      area: d.area, titolo: d.titolo, data: d.data, ora, durataMinuti: d.durataMinuti,
+      area: d.area, titolo: d.titolo, data: d.data, ora, ...durataDi(d, ora),
       categoria: d.categoria, descrizione, notionPageId: task?.pageId,
       tipo: d.creaTaskNotion ? "cosa_da_fare" : "appuntamento",
     });
@@ -74,7 +83,8 @@ export async function createFromDraft(d: Draft, ora: string, bozza?: number): Pr
 /** Dry run of createFromDraft: same decisions (task or not, end time), no writes. */
 export async function planFromDraft(d: Draft, ora: string): Promise<Azione[]> {
   const cliente = wantsTask(d) ? await taskClient(d) : null;
-  const fine = addMinutesLocal(d.data, ora, Math.max(MIN_DURATION_MINUTES, d.durataMinuti || MIN_DURATION_MINUTES));
+  const { durataMinuti, durataEsatta } = durataDi(d, ora);
+  const fine = addMinutesLocal(d.data, ora, durataEsatta ? durataMinuti : Math.max(MIN_DURATION_MINUTES, durataMinuti || MIN_DURATION_MINUTES));
   return [{
     tipo: "evento_creato", area: d.area, calendarId: AREAS[d.area].calendarId, eventId: "DRY-RUN",
     titolo: d.titolo, data: d.data, ora, fineOra: fine.time, categoria: d.categoria,

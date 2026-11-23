@@ -13,7 +13,8 @@ import { markDoneInMessage } from "./briefing";
 import { markTaskDone } from "./notion";
 import { createFromDraft, describe, undoCreations } from "./actions";
 import {
-  STATI, compactId, createLog, findPendingQuestion, findWaitingForTypedTime, getLog, isUpdateLogged, updateLog,
+  STATI, compactId, createLog, findPendingQuestion, findWaitingForTypedTime, getLog, getRecentExchanges,
+  isRecentDuplicate, isUpdateLogged, updateLog,
   type Azione, type LogRow, type Sospeso, type Stato,
 } from "./log";
 import {
@@ -66,6 +67,8 @@ export interface HandlerOptions {
   dryRun?: boolean;
   /** Replaces the Telegram reply for text messages (used by tests). */
   reply?: (text: string, keyboard?: InlineKeyboard) => Promise<void>;
+  /** Tests: only conversation history created after this ISO time. */
+  historySince?: string;
 }
 
 export async function handleUpdate(update: TgUpdate, opts: HandlerOptions = {}): Promise<void> {
@@ -93,6 +96,18 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
   }
   if (await isUpdateLogged(updateId)) return; // Telegram retry of an update we already handled
 
+  // The same message sent twice within 2 minutes: do it once (short replies like "sì" excluded).
+  if (text.length > 15 && (await isRecentDuplicate(text))) {
+    const dupId = await createLog(text, updateId);
+    const r = "↩️ Hai mandato lo stesso messaggio poco fa: l'ho già gestito, non lo rifaccio.";
+    await updateLog(dupId, { stato: STATI.nessuna, risposta: r });
+    await say(r);
+    return;
+  }
+
+  // The last exchanges, read before this message is logged.
+  const storia = await getRecentExchanges(opts.historySince).catch(() => []);
+
   const logId = await createLog(text, updateId);
   if (!opts.reply) await sendTyping(chatId);
 
@@ -107,17 +122,16 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
     }
   }
 
-  // A bot question still open. Within 60 minutes Claude gets that exchange and
-  // says whether this message answers it (merge and complete) or not. If not,
-  // or if the question expired, the reply reminds the user: the request stays
-  // answerable for one more round, then it is closed with a notice.
+  // A bot question still open. Within 60 minutes Claude (who sees it in the
+  // recent exchanges) says whether this message answers it. Only when it says
+  // "no", or the question expired, the reply reminds the user: the request
+  // stays answerable for one more round, then it is closed with a notice.
   const found = await findPendingQuestion().catch(() => null);
   const pending = found?.row.sospeso ? found : null;
-  const storia = pending && !pending.scaduta ? pending.row.sospeso!.conversazione : [];
 
   let result;
   try {
-    result = await runAgent(text, { dryRun: opts.dryRun, storia });
+    result = await runAgent(text, { dryRun: opts.dryRun, storia, sospeso: Boolean(pending && !pending.scaduta) });
   } catch (err) {
     await updateLog(logId, { stato: STATI.errore, errore: errMsg(err) }).catch(() => {});
     await say(`❌ Errore: ${errMsg(err)}`);
@@ -127,7 +141,7 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
   const { azioni, bozze, errori, domanda, promemoria, rispostaSospeso, testo } = result;
 
   // The pending request this message did not answer (moved on, or expired).
-  const lasciato = pending && !(storia.length && rispostaSospeso === true) ? pending.row.sospeso! : null;
+  const lasciato = pending && (pending.scaduta || rispostaSospeso === false) ? pending.row.sospeso! : null;
   let avviso: string | null = null;
   let riproposto: Sospeso | null = null;
   if (lasciato) {
@@ -151,9 +165,12 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
 
   if (reply) await say(reply, hasCreation(azioni) ? undoKeyboard(logId) : undefined);
 
+  const domandeOra: string[] = [];
   for (let i = 0; i < bozze.length; i++) {
     const d = bozze[i];
-    await say(`⏰ A che ora? ${d.titolo} · ${AREAS[d.area].label} · ${formatDayShort(d.data)}`, timeKeyboard(logId, i));
+    const q = `⏰ A che ora? ${d.titolo} · ${AREAS[d.area].label} · ${formatDayShort(d.data)}`;
+    domandeOra.push(q);
+    await say(q, timeKeyboard(logId, i));
   }
 
   // What stays waiting for an answer on this row: a new question (with the
@@ -161,7 +178,7 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
   const sospeso: Sospeso | null = domanda
     ? {
         conversazione: [
-          ...(rispostaSospeso === true ? storia : []),
+          ...(rispostaSospeso === true && pending ? pending.row.sospeso!.conversazione : []),
           { ruolo: "utente" as const, testo: text },
           { ruolo: "bot" as const, testo: domanda },
         ].slice(-8),
@@ -178,7 +195,7 @@ async function handleMessage(updateId: number, msg: TgMessage, opts: HandlerOpti
         ? STATI.ok
         : errori.length ? STATI.errore : STATI.nessuna;
   await updateLog(logId, {
-    stato, azioni, bozze, sospeso, risposta: reply,
+    stato, azioni, bozze, sospeso, risposta: [reply, ...domandeOra].filter(Boolean).join("\n"),
     ...(errori.length ? { errore: errori.join("\n") } : {}),
   });
 }
@@ -300,6 +317,7 @@ async function completeDraft(
   });
 
   const text = describe(created).join("\n");
+  await updateLog(row.id, { risposta: [row.risposta, text].filter(Boolean).join("\n") }).catch(() => {});
   if (messageId !== undefined) await editMessage(chatId, messageId, text, undoKeyboard(row.id, i));
   else await sendMessage(chatId, text, undoKeyboard(row.id, i));
 }

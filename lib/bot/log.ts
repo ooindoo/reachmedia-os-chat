@@ -34,6 +34,8 @@ export interface Draft {
   /** "Cosa da fare" (event + Notion task) rather than an appointment (event only). */
   creaTaskNotion: boolean;
   note: string | null;
+  /** Explicit end time ("dalle 11 alle 11:15"), kept even under 30 minutes. */
+  oraFine?: string | null;
   /** Set once the draft has been turned into an event. */
   completata?: boolean;
 }
@@ -82,6 +84,8 @@ export interface LogRow {
   bozzaInAttesa: number | null;
   /** Request waiting for an answer, when Stato is "Attesa risposta". */
   sospeso: Sospeso | null;
+  /** What the bot replied (also the history given to Claude). */
+  risposta: string;
 }
 
 /** How long a bot question waits for an answer before the next message counts as new. */
@@ -183,6 +187,7 @@ export async function getLog(id: string): Promise<LogRow> {
     bozze: bozza?.bozze ?? [],
     bozzaInAttesa: bozza?.inAttesa ?? null,
     sospeso: bozza?.sospeso ?? null,
+    risposta: readText(props.Risposta),
   };
 }
 
@@ -231,6 +236,51 @@ export async function findPendingQuestion(): Promise<{ row: LogRow; scaduta: boo
   const edited = new Date((page as any).last_edited_time).getTime();
   const scaduta = Date.now() - edited > PENDING_QUESTION_MINUTES * 60 * 1000;
   return { row: await getLog(page.id), scaduta };
+}
+
+/** How far back the conversation given to Claude goes. */
+export const HISTORY_MINUTES = 60;
+const MAX_HISTORY = 6;
+
+/**
+ * Last exchanges (user message → bot reply) of the past HISTORY_MINUTES,
+ * oldest first, so Claude can resolve "modifica l'orario", "sì quello"...
+ */
+export async function getRecentExchanges(since?: string): Promise<Turno[]> {
+  const from = since ?? new Date(Date.now() - HISTORY_MINUTES * 60 * 1000).toISOString();
+  const res = await notion().dataSources.query({
+    data_source_id: logDs(),
+    filter: { timestamp: "created_time", created_time: { on_or_after: from } },
+    sorts: [{ timestamp: "created_time", direction: "descending" }],
+    page_size: MAX_HISTORY,
+  });
+  const turni: Turno[] = [];
+  for (const page of [...res.results].reverse()) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const props = (page as any).properties ?? {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messaggio = (props.Messaggio?.title ?? []).map((t: any) => t.plain_text).join("").trim();
+    if (!messaggio || messaggio.startsWith("✅ Fatto:")) continue;
+    turni.push({ ruolo: "utente", testo: messaggio });
+    turni.push({ ruolo: "bot", testo: readText(props.Risposta).trim() || "(nessuna risposta)" });
+  }
+  return turni;
+}
+
+/** Same text received in the last 2 minutes (a message sent twice by mistake). */
+export async function isRecentDuplicate(text: string): Promise<boolean> {
+  const from = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const res = await notion().dataSources.query({
+    data_source_id: logDs(),
+    filter: {
+      and: [
+        { property: "Messaggio", title: { equals: text } },
+        { timestamp: "created_time", created_time: { on_or_after: from } },
+      ],
+    },
+    page_size: 1,
+  });
+  return res.results.length > 0;
 }
 
 /** Notion page IDs travel in callback_data without dashes (64-byte limit). */

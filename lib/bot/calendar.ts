@@ -79,6 +79,8 @@ export interface NewEvent {
   descrizione?: string;
   notionPageId?: string;
   tipo?: TipoEvento;
+  /** Duration comes from an explicit end time ("dalle 11 alle 11:15"): keep it even under 30 min. */
+  durataEsatta?: boolean;
 }
 
 export interface CreatedEvent {
@@ -113,7 +115,9 @@ export interface FoundEvent {
 
 export async function createEvent(e: NewEvent): Promise<CreatedEvent> {
   const { calendarId } = AREAS[e.area];
-  const durata = Math.max(MIN_DURATION_MINUTES, Math.round(e.durataMinuti || MIN_DURATION_MINUTES));
+  const durata = e.durataEsatta && e.durataMinuti > 0
+    ? Math.round(e.durataMinuti)
+    : Math.max(MIN_DURATION_MINUTES, Math.round(e.durataMinuti || MIN_DURATION_MINUTES));
   const end = addMinutesLocal(e.data, e.ora, durata);
 
   const privateProps: Record<string, string> = { rmBot: "1", rmCategoria: e.categoria };
@@ -218,6 +222,8 @@ export interface EventChanges {
   data?: string;
   ora?: string;
   durataMinuti?: number;
+  /** Explicit end time ("alle 11:15"): duration = end − start, kept even under 30 min. */
+  oraFine?: string;
   categoria?: Categoria;
 }
 
@@ -227,9 +233,17 @@ export function nextTiming(ev: FoundEvent, ch: EventChanges) {
   const data = ch.data ?? ev.data;
   const ora = ch.ora ?? ev.ora;
   const currentDuration = minutesBetweenLocal(ev.data, ev.ora, ev.fineData, ev.fineOra);
-  const durata = Math.max(MIN_DURATION_MINUTES, Math.round(ch.durataMinuti ?? currentDuration));
+  let durata: number;
+  if (ch.oraFine) {
+    durata = minutesBetweenLocal(data, ora, data, ch.oraFine);
+    if (durata <= 0) throw new Error("l'orario di fine deve essere dopo l'inizio");
+  } else if (ch.durataMinuti !== undefined) {
+    durata = Math.max(MIN_DURATION_MINUTES, Math.round(ch.durataMinuti));
+  } else {
+    durata = currentDuration; // moving an event keeps its length
+  }
   const end = addMinutesLocal(data, ora, durata);
-  return { data, ora, durata, fineData: end.date, fineOra: end.time };
+  return { data, ora, durata, durataEsatta: Boolean(ch.oraFine), fineData: end.date, fineOra: end.time };
 }
 
 /** PATCH in place. Never changes calendar_id: changing area is delete + recreate. */
