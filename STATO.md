@@ -88,5 +88,4 @@ Bot Telegram **@reachmediaos_bot** dentro l'app Next.js 14 su Vercel (progetto `
 - **Mail in Ccn:** nel report vengono mostrate come "A". È solo un difetto di visualizzazione, non ancora corretto.
 - **Log di Vercel:** con il piano Hobby restano solo 1 ora. Un errore di notte si vede solo nel Bot Log o nel messaggio di avviso su Telegram.
 - **Accesso Gmail completo:** Composio tiene un accesso completo alle due caselle. Il limite è solo nel codice, quindi qualsiasi modifica a `lib/bot/gmail.ts` va guardata con attenzione.
-- **`squale_hero1_4x5.jpg`:** è nella cartella ma non nel repository, lasciato fuori di proposito.
 - **Vercel CLI locale:** è vecchia (54.9.1, l'ultima è 66.6.0). Si aggiorna con `npm i -g vercel@latest`.
