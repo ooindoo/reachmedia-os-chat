@@ -1,6 +1,6 @@
 # Stato del progetto
 
-Aggiornato al 24 novembre 2026, ultimo commit `f6aeee7`.
+Aggiornato al 24 novembre 2026.
 
 Bot Telegram **@reachmediaos_bot** dentro l'app Next.js 14 su Vercel (progetto `reachmedia-os-chat`, dominio chat.reachmedia.it). Riceve messaggi in italiano e li mette su Google Calendar (account arditnwork@gmail.com, via Composio) e su Notion. Controlla anche le mail dei clienti senza risposta e prepara le bozze, senza mai inviarle.
 
@@ -44,6 +44,11 @@ Bot Telegram **@reachmediaos_bot** dentro l'app Next.js 14 su Vercel (progetto `
 - **Rotte del bot e dei cron:** rispondono 401 senza il segreto (secret token di Telegram, `CRON_SECRET`).
 - **Messaggi Telegram in HTML:** tutti i testi dinamici sono escapati, con un test in `scripts/test-telegram-html.ts` (11 test).
 - **Deploy:** automatico dal push su `main`, collegato a GitHub `ooindoo/reachmedia-os-chat`.
+- **Pulizia della cartella:** tolti i file che non c'entravano col progetto, spostati nel Cestino.
+  - un'immagine Squale;
+  - due font duplicati di `app/fonts`;
+  - una miniatura PNG mai usata;
+  - due file `client_secret` di Google. Il codice non li legge, perché usa le variabili d'ambiente.
 
 ## Deciso
 
@@ -88,4 +93,3 @@ Bot Telegram **@reachmediaos_bot** dentro l'app Next.js 14 su Vercel (progetto `
 - **Mail in Ccn:** nel report vengono mostrate come "A". È solo un difetto di visualizzazione, non ancora corretto.
 - **Log di Vercel:** con il piano Hobby restano solo 1 ora. Un errore di notte si vede solo nel Bot Log o nel messaggio di avviso su Telegram.
 - **Accesso Gmail completo:** Composio tiene un accesso completo alle due caselle. Il limite è solo nel codice, quindi qualsiasi modifica a `lib/bot/gmail.ts` va guardata con attenzione.
-- **Vercel CLI locale:** è vecchia (54.9.1, l'ultima è 66.6.0). Si aggiorna con `npm i -g vercel@latest`.
